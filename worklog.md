@@ -218,3 +218,26 @@ Stage Summary:
 - Key architecture change: useRef as source of truth, state only for rendering
 - Key UX change: upload saves to gallery without auto-selecting, user clicks to try on
 - Removed all animation complexity that was causing rendering bugs
+
+---
+Task ID: 1
+Agent: Main Agent
+Task: Fix duplicate customGlasses declaration build error and clean up state management
+
+Work Log:
+- Read src/app/page.tsx and identified the root cause: `customGlasses` was declared twice (line 91 with `useState` and line 103 with `useMemo` from ref)
+- Previous ref-based approach was added on top of old useState without removing it
+- The ref-based approach also triggered a React 19 lint error (react-hooks/refs: "Cannot access ref value during render")
+- Removed the entire ref-based approach (customGlassesRef, customGlassesVersion, useMemo)
+- Restored clean simple `useState<GlassesModel[]>([])` with functional updates in callbacks
+- Removed unused `useRef` and `useMemo` imports
+- Ran lint — passes cleanly with zero errors
+- Verified page loads with HTTP 200
+
+Stage Summary:
+- Build error fixed: duplicate `customGlasses` declaration removed
+- State management simplified to standard React `useState` pattern
+- `handleAddCustom` uses `setCustomGlasses(prev => [g, ...prev])` (no closure issues)
+- `handleDeleteCustom` uses `setCustomGlasses(prev => prev.filter(...))` 
+- Lint passes cleanly
+- Page compiles and serves correctly (HTTP 200)
