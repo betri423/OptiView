@@ -1,46 +1,34 @@
 # Worklog
 
 ---
-Task ID: 3
+Task ID: 4
 Agent: Main Agent
-Task: Replace cartoon SVG glasses with photorealistic AI-generated images and improve rendering
+Task: Fix glasses images - regenerate with correct prompts and improve background removal
 
 Work Log:
-- Generated 12 photorealistic glasses images using AI image generation (1344x768 each)
-  - wayfarer-black.png, wayfarer-tortoise.png, aviator-gold.png, aviator-silver.png
-  - round-gold.png, cateye-black.png, cateye-red.png, sport-black.png
-  - clubmaster-black.png, oversized-black.png, clear-frame.png, oversized-clear.png
-- Generated premium hero image for landing page (hero-glasses.jpg)
-- Created `src/lib/image-utils.ts` — Background removal utility that:
-  - Removes white/light backgrounds using luminance + saturation thresholding
-  - Applies edge smoothing with 3x3 alpha box blur
-  - Auto-crops to content bounding box with padding
-  - Caches processed images for performance
-- Updated `src/lib/glasses-data.ts`:
-  - Changed from SVG data URLs to AI-generated photorealistic PNG images
-  - Renamed `svgDataUrl` to `overlayUrl` for clarity
-  - Added aviator-silver and oversized-clear as distinct models (total 13 models)
-- Updated `src/hooks/use-face-detection.ts`:
-  - Rewrote `drawGlassesOnCanvas` for photorealistic rendering
-  - Added dual-layer contact shadow (8px + 16px blur) for depth
-  - Improved perspective warping using face width instead of eye distance
-  - Added subtle lens reflections and frame edge highlights
-  - Added bottom vignette for realism
-- Updated `src/components/tryon-camera.tsx`:
-  - Integrated background removal on glasses image load
-  - Added image loading state indicator
-  - Uses `overlayUrl` field instead of `svgDataUrl`
-- Updated `src/components/glasses-gallery.tsx`:
-  - Updated to use new `overlayUrl` field for custom uploads
-  - Gallery displays AI-generated photorealistic images
+- User reported glasses looked bad: had visible folded arms/legs, white background covering face
+- Regenerated ALL 12 glasses images with corrected prompts:
+  - "Front view only" — no ear arms, no temples visible
+  - "Just the front piece" — as if being worn on face
+  - "Clean pure white background, product cutout style" — easier removal
+  - 1024x1024 square format for consistent processing
+- Completely rewrote `src/lib/image-utils.ts` background removal:
+  - Uses BFS flood-fill from ALL image edges to detect background
+  - Marks connected bright+low-saturation pixels from borders as background
+  - Applies smooth alpha fade (4px) at content/background transitions
+  - Auto-crops to content bounding box with 3% padding
+  - Final edge smoothing pass for anti-aliased borders
+  - Caching for performance
+- All 12 models regenerated: wayfarer-black, wayfarer-tortoise, aviator-gold,
+  aviator-silver, round-gold, cateye-black, cateye-red, sport-black,
+  clubmaster-black, oversized-black, clear-frame, oversized-clear
 
 Stage Summary:
-- Replaced all cartoon SVG glasses with photorealistic AI-generated images
-- Background removal ensures transparent overlay on face
-- Dual-layer shadows create natural depth effect
-- Auto-cropping ensures glasses fill proper proportions on face
-- 13 photorealistic glasses models across 7 categories
-- Gallery displays professional product photography quality images
+- Glasses images now show ONLY the front frame (no arms/legs)
+- Flood-fill background removal properly handles non-uniform backgrounds
+- Smooth alpha transitions at edges prevent hard cutout look
+- Auto-crop eliminates excess whitespace around glasses
+- 12 photorealistic models ready for try-on
 
 ---
 

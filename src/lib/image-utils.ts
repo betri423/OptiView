@@ -1,16 +1,15 @@
 /**
- * Image utility functions for processing glasses images
- * Removes white/light backgrounds, auto-crops to content bounds,
- * and applies edge softening for realistic blending
+ * Advanced background removal for glasses images.
+ * Uses multi-pass processing: brightness thresholding, flood fill from edges,
+ * and morphological operations for clean edges.
  */
 
-// Cache for processed images to avoid re-processing
 const processedImageCache = new Map<string, HTMLImageElement>();
 
 /**
- * Removes white/light background from an image using pixel analysis.
- * Then auto-crops to the bounding box of non-transparent content.
- * Returns a new HTMLImageElement with transparent background.
+ * Removes white/light background from an image.
+ * Uses edge-flood approach: starts from image borders and removes
+ * all connected light pixels, preserving the glasses content.
  */
 export function removeBackground(img: HTMLImageElement): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
@@ -29,7 +28,7 @@ export function removeBackground(img: HTMLImageElement): Promise<HTMLImageElemen
 
       const ctx = canvas.getContext('2d', { willReadFrequently: true });
       if (!ctx) {
-        reject(new Error('Could not get canvas context'));
+        reject(new Error('No canvas context'));
         return;
       }
 
@@ -37,96 +36,133 @@ export function removeBackground(img: HTMLImageElement): Promise<HTMLImageElemen
       const imageData = ctx.getImageData(0, 0, w, h);
       const data = imageData.data;
 
-      // ─── Pass 1: Background removal using luminance + saturation ───
-      for (let i = 0; i < data.length; i += 4) {
-        const r = data[i];
-        const g = data[i + 1];
-        const b = data[i + 2];
+      // ─── Helper: get pixel index ───
+      const idx = (x: number, y: number) => (y * w + x) * 4;
+      const getBrightness = (i: number) => {
+        return data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
+      };
+      const getSaturation = (i: number) => {
+        const max = Math.max(data[i], data[i + 1], data[i + 2]);
+        const min = Math.min(data[i], data[i + 1], data[i + 2]);
+        return max - min;
+      };
 
-        const brightness = (r * 0.299 + g * 0.587 + b * 0.114);
-        const maxC = Math.max(r, g, b);
-        const minC = Math.min(r, g, b);
-        const saturation = maxC - minC;
+      // ─── Step 1: Mark all pixels as "unknown" ───
+      // We'll use a visited array: 0 = unknown, 1 = background, 2 = content
+      const state = new Uint8Array(w * h);
 
-        // Background detection: bright + low saturation = likely white background
-        if (brightness > 220 && saturation < 30) {
-          const fadeStart = 210;
-          const fadeEnd = 245;
-          let alpha = 1;
-          if (brightness > fadeEnd) {
-            alpha = 0;
-          } else if (brightness > fadeStart) {
-            const t = (brightness - fadeStart) / (fadeEnd - fadeStart);
-            alpha = 1 - t;
-          }
-          data[i + 3] = Math.round(data[i + 3] * alpha);
+      // ─── Step 2: Flood fill from ALL edges to find background ───
+      // A pixel is background if it's bright AND low saturation
+      const isBackgroundPixel = (i: number): boolean => {
+        const brightness = getBrightness(i);
+        const saturation = getSaturation(i);
+        return brightness > 200 && saturation < 40;
+      };
+
+      // BFS flood fill from borders
+      const queue: number[] = [];
+      
+      // Add all border pixels that are background-like
+      for (let x = 0; x < w; x++) {
+        const topIdx = idx(x, 0);
+        if (isBackgroundPixel(topIdx) && state[x] === 0) {
+          state[x] = 1;
+          queue.push(x); // x, y=0
         }
-
-        // Very light gray with almost no color
-        if (brightness > 245 && saturation < 15) {
-          data[i + 3] = 0;
+        const botIdx = idx(x, h - 1);
+        const botPos = (h - 1) * w + x;
+        if (isBackgroundPixel(botIdx) && state[botPos] === 0) {
+          state[botPos] = 1;
+          queue.push(botPos);
         }
       }
-
-      // ─── Pass 2: Edge smoothing — box blur on alpha channel ───
-      const alphaData = new Uint8Array(w * h);
       for (let y = 0; y < h; y++) {
-        for (let x = 0; x < w; x++) {
-          alphaData[y * w + x] = data[(y * w + x) * 4 + 3];
+        const leftIdx = idx(0, y);
+        const leftPos = y * w;
+        if (isBackgroundPixel(leftIdx) && state[leftPos] === 0) {
+          state[leftPos] = 1;
+          queue.push(leftPos);
+        }
+        const rightIdx = idx(w - 1, y);
+        const rightPos = y * w + (w - 1);
+        if (isBackgroundPixel(rightIdx) && state[rightPos] === 0) {
+          state[rightPos] = 1;
+          queue.push(rightPos);
         }
       }
 
-      // 3x3 box blur on alpha
-      const smoothed = new Uint8Array(w * h);
-      for (let y = 1; y < h - 1; y++) {
-        for (let x = 1; x < w - 1; x++) {
-          let sum = 0;
-          for (let dy = -1; dy <= 1; dy++) {
-            for (let dx = -1; dx <= 1; dx++) {
-              sum += alphaData[(y + dy) * w + (x + dx)];
+      // BFS
+      let head = 0;
+      while (head < queue.length) {
+        const pos = queue[head++];
+        const px = pos % w;
+        const py = Math.floor(pos / w);
+        
+        // Check 4 neighbors
+        const neighbors = [
+          py > 0 ? pos - w : -1,     // up
+          py < h - 1 ? pos + w : -1, // down
+          px > 0 ? pos - 1 : -1,     // left
+          px < w - 1 ? pos + 1 : -1, // right
+        ];
+
+        for (const nPos of neighbors) {
+          if (nPos >= 0 && state[nPos] === 0) {
+            const nIdx = nPos * 4;
+            if (isBackgroundPixel(nIdx)) {
+              state[nPos] = 1;
+              queue.push(nPos);
             }
           }
-          smoothed[y * w + x] = Math.round(sum / 9);
         }
       }
 
-      // Write smoothed alpha, only at edges
-      for (let y = 1; y < h - 1; y++) {
-        for (let x = 1; x < w - 1; x++) {
-          const idx = (y * w + x) * 4;
-          const origAlpha = data[idx + 3];
-          const smoothAlpha = smoothed[y * w + x];
+      // ─── Step 3: Mark remaining unknowns as content ───
+      for (let i = 0; i < state.length; i++) {
+        if (state[i] === 0) state[i] = 2;
+      }
 
-          if (origAlpha > 0 && origAlpha < 255) {
-            data[idx + 3] = smoothAlpha;
-          } else if (origAlpha === 255) {
-            // Near an edge? Blend slightly
-            let minNeighbor = 255;
-            for (let dy = -1; dy <= 1; dy++) {
-              for (let dx = -1; dx <= 1; dx++) {
-                const na = alphaData[(y + dy) * w + (x + dx)];
-                if (na < minNeighbor) minNeighbor = na;
+      // ─── Step 4: Apply alpha with smooth transitions at edges ───
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          const pos = y * w + x;
+          const i = pos * 4;
+
+          if (state[pos] === 1) {
+            // Background pixel — check distance to nearest content
+            // for smooth fade
+            let minDistToContent = 999;
+            const searchR = 5;
+            for (let dy = -searchR; dy <= searchR; dy++) {
+              for (let dx = -searchR; dx <= searchR; dx++) {
+                const nx = x + dx;
+                const ny = y + dy;
+                if (nx >= 0 && nx < w && ny >= 0 && ny < h) {
+                  if (state[ny * w + nx] === 2) {
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    if (dist < minDistToContent) minDistToContent = dist;
+                  }
+                }
               }
             }
-            if (minNeighbor < 200) {
-              data[idx + 3] = Math.min(255, smoothAlpha + 10);
+            
+            // Fade over ~4 pixels from content edge
+            if (minDistToContent < 4) {
+              const fade = minDistToContent / 4;
+              data[i + 3] = Math.round(255 * (1 - fade));
+            } else {
+              data[i + 3] = 0;
             }
           }
+          // Content pixels keep full alpha
         }
       }
 
-      ctx.putImageData(imageData, 0, 0);
-
-      // ─── Pass 3: Auto-crop to content bounding box ───
-      // Find bounding box of non-transparent pixels
+      // ─── Step 5: Auto-crop to bounding box ───
       let minX = w, maxX = 0, minY = h, maxY = 0;
-      let hasContent = false;
-
       for (let y = 0; y < h; y++) {
         for (let x = 0; x < w; x++) {
-          const alpha = data[(y * w + x) * 4 + 3];
-          if (alpha > 10) {
-            hasContent = true;
+          if (data[(y * w + x) * 4 + 3] > 5) {
             if (x < minX) minX = x;
             if (x > maxX) maxX = x;
             if (y < minY) minY = y;
@@ -135,13 +171,8 @@ export function removeBackground(img: HTMLImageElement): Promise<HTMLImageElemen
         }
       }
 
-      if (!hasContent) {
-        reject(new Error('No content found after background removal'));
-        return;
-      }
-
-      // Add small padding around the content
-      const padding = Math.round(Math.min(w, h) * 0.02);
+      // Add padding (3% of smallest dimension)
+      const padding = Math.round(Math.min(w, h) * 0.03);
       minX = Math.max(0, minX - padding);
       maxX = Math.min(w - 1, maxX + padding);
       minY = Math.max(0, minY - padding);
@@ -150,14 +181,44 @@ export function removeBackground(img: HTMLImageElement): Promise<HTMLImageElemen
       const cropW = maxX - minX + 1;
       const cropH = maxY - minY + 1;
 
-      // Create cropped canvas
       const croppedCanvas = document.createElement('canvas');
       croppedCanvas.width = cropW;
       croppedCanvas.height = cropH;
       const croppedCtx = croppedCanvas.getContext('2d')!;
       croppedCtx.drawImage(canvas, minX, minY, cropW, cropH, 0, 0, cropW, cropH);
 
-      // Convert to image
+      // ─── Step 6: Final edge smoothing ───
+      const finalData = croppedCtx.getImageData(0, 0, cropW, cropH);
+      const fd = finalData.data;
+      
+      // Light alpha smoothing pass
+      const alphaSmooth = new Uint8Array(cropW * cropH);
+      for (let y = 1; y < cropH - 1; y++) {
+        for (let x = 1; x < cropW - 1; x++) {
+          let sum = 0, count = 0;
+          for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+              sum += fd[((y + dy) * cropW + (x + dx)) * 4 + 3];
+              count++;
+            }
+          }
+          alphaSmooth[y * cropW + x] = Math.round(sum / count);
+        }
+      }
+      
+      // Apply smoothing only at edges
+      for (let y = 1; y < cropH - 1; y++) {
+        for (let x = 1; x < cropW - 1; x++) {
+          const i = (y * cropW + x) * 4;
+          const orig = fd[i + 3];
+          if (orig > 10 && orig < 245) {
+            fd[i + 3] = alphaSmooth[y * cropW + x];
+          }
+        }
+      }
+      
+      croppedCtx.putImageData(finalData, 0, 0);
+
       const processedImg = new Image();
       processedImg.onload = () => {
         processedImageCache.set(cacheKey, processedImg);
@@ -172,8 +233,7 @@ export function removeBackground(img: HTMLImageElement): Promise<HTMLImageElemen
 }
 
 /**
- * Loads an image from a URL and processes it to remove the background.
- * Returns a transparent-background HTMLImageElement ready for canvas overlay.
+ * Loads an image and removes its background.
  */
 export async function loadTransparentImage(url: string): Promise<HTMLImageElement | null> {
   return new Promise((resolve) => {
@@ -185,15 +245,11 @@ export async function loadTransparentImage(url: string): Promise<HTMLImageElemen
         const transparent = await removeBackground(img);
         resolve(transparent);
       } catch {
-        // If background removal fails, use original
         resolve(img);
       }
     };
 
-    img.onerror = () => {
-      resolve(null);
-    };
-
+    img.onerror = () => resolve(null);
     img.src = url;
   });
 }
