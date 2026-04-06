@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback } from "react";
 import { type GlassesModel, defaultGlasses, GLASSES_CATEGORIES } from "@/lib/glasses-data";
 import { removeBackground } from "@/lib/image-utils";
 import { Button } from "@/components/ui/button";
@@ -35,6 +35,7 @@ import {
   Wand2,
   AlertCircle,
   CheckCircle2,
+  Plus,
 } from "lucide-react";
 import { toast } from "sonner";
 import { motion, AnimatePresence } from "framer-motion";
@@ -73,28 +74,29 @@ export default function GlassesGallery({
   const [isDragOver, setIsDragOver] = useState(false);
   const [processingStep, setProcessingStep] = useState(0);
 
-  const allGlasses = [...defaultGlasses, ...customGlasses];
+  // Separate custom glasses for display
+  const filteredDefault =
+    activeCategory === "all" || activeCategory === "custom"
+      ? defaultGlasses.filter((g) => activeCategory === "all" ? true : false)
+      : defaultGlasses.filter((g) => g.category === activeCategory);
 
-  const filteredGlasses =
-    activeCategory === "all"
-      ? allGlasses
-      : allGlasses.filter((g) => g.category === activeCategory);
+  const filteredCustom =
+    activeCategory === "all" || activeCategory === "custom"
+      ? customGlasses
+      : [];
 
   const processImageFile = useCallback((file: File) => {
     if (!file.type.startsWith("image/")) {
       toast.error("Por favor selecciona una imagen válida");
       return;
     }
-
     if (file.size > 10 * 1024 * 1024) {
       toast.error("La imagen no debe superar 10MB");
       return;
     }
-
     const reader = new FileReader();
     reader.onload = (ev) => {
-      const url = ev.target?.result as string;
-      setPreviewUrl(url);
+      setPreviewUrl(ev.target?.result as string);
     };
     reader.readAsDataURL(file);
   }, []);
@@ -102,8 +104,7 @@ export default function GlassesGallery({
   const handleFileSelect = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
-      if (!file) return;
-      processImageFile(file);
+      if (file) processImageFile(file);
     },
     [processImageFile]
   );
@@ -131,6 +132,28 @@ export default function GlassesGallery({
     setIsDragOver(false);
   }, []);
 
+  const finishUpload = useCallback((imageUrl: string, overlayUrl: string, name: string) => {
+    const newGlasses: GlassesModel = {
+      id: `custom-${Date.now()}`,
+      name: name || "Personalizado",
+      brand: "CUSTOM",
+      category: "custom",
+      price: "Custom",
+      color: "#888",
+      imageUrl,
+      overlayUrl,
+    };
+
+    setCustomGlasses((prev) => [newGlasses, ...prev]);
+    onSelect(newGlasses);
+    onCustomGlassesChange(null);
+    setPreviewUrl(null);
+    setUploadName("");
+    setUploadOpen(false);
+    setActiveCategory("all");
+    toast.success("✅ Anteojos agregados y seleccionados");
+  }, [onSelect, onCustomGlassesChange]);
+
   const handleUpload = useCallback(async () => {
     if (!previewUrl) {
       toast.error("Selecciona una imagen primero");
@@ -141,7 +164,6 @@ export default function GlassesGallery({
     setProcessingStep(1);
 
     try {
-      // Step 1: Load the image
       const img = new Image();
       img.crossOrigin = "anonymous";
       await new Promise<void>((resolve, reject) => {
@@ -150,53 +172,43 @@ export default function GlassesGallery({
         img.src = previewUrl;
       });
 
-      // Step 2: Remove background automatically
+      // Try to remove background
       setProcessingStep(2);
       const processedImg = await removeBackground(img);
-
-      // Step 3: Create the glasses model with processed image
       setProcessingStep(3);
-      const processedUrl = processedImg.src;
 
-      const newGlasses: GlassesModel = {
-        id: `custom-${Date.now()}`,
-        name: uploadName || "Personalizado",
-        brand: "CUSTOM",
-        category: "custom",
-        price: "Custom",
-        color: "#888",
-        imageUrl: processedUrl,
-        overlayUrl: processedUrl,
-      };
+      // Validate processed image has content
+      const testCanvas = document.createElement("canvas");
+      testCanvas.width = processedImg.naturalWidth || processedImg.width;
+      testCanvas.height = processedImg.naturalHeight || processedImg.height;
+      const testCtx = testCanvas.getContext("2d");
+      if (testCtx) {
+        testCtx.drawImage(processedImg, 0, 0);
+        const testData = testCtx.getImageData(0, 0, testCanvas.width, testCanvas.height).data;
+        let hasContent = false;
+        for (let i = 3; i < testData.length; i += 4) {
+          if (testData[i] > 10) {
+            hasContent = true;
+            break;
+          }
+        }
+        if (!hasContent) {
+          // Processed image is empty, use original
+          finishUpload(previewUrl, previewUrl, uploadName);
+          return;
+        }
+      }
 
-      setCustomGlasses((prev) => [...prev, newGlasses]);
-      setPreviewUrl(null);
-      setUploadName("");
-      setUploadOpen(false);
-      toast.success("Anteojos personalizados agregados con fondo eliminado");
+      finishUpload(processedImg.src, processedImg.src, uploadName);
     } catch (err) {
       console.error("Error processing image:", err);
       // Fallback: use original image without processing
-      const newGlasses: GlassesModel = {
-        id: `custom-${Date.now()}`,
-        name: uploadName || "Personalizado",
-        brand: "CUSTOM",
-        category: "custom",
-        price: "Custom",
-        color: "#888",
-        imageUrl: previewUrl,
-        overlayUrl: previewUrl,
-      };
-      setCustomGlasses((prev) => [...prev, newGlasses]);
-      setPreviewUrl(null);
-      setUploadName("");
-      setUploadOpen(false);
-      toast.success("Anteojos personalizados agregados");
+      finishUpload(previewUrl, previewUrl, uploadName);
     } finally {
       setIsProcessing(false);
       setProcessingStep(0);
     }
-  }, [previewUrl, uploadName]);
+  }, [previewUrl, uploadName, finishUpload]);
 
   const handleDeleteCustom = useCallback(
     (id: string) => {
@@ -209,9 +221,68 @@ export default function GlassesGallery({
     [selectedGlasses, onSelect]
   );
 
-  const handleRemoveCustomActive = useCallback(() => {
-    onCustomGlassesChange(null);
-  }, [onCustomGlassesChange]);
+  // Render a single glasses card
+  const renderGlassesCard = (glasses: GlassesModel) => (
+    <motion.div
+      key={glasses.id}
+      layout
+      initial={{ opacity: 0, scale: 0.9 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.9 }}
+      transition={{ duration: 0.2 }}
+    >
+      <button
+        onClick={() => {
+          onCustomGlassesChange(null);
+          if (selectedGlasses?.id === glasses.id) {
+            onSelect(null);
+          } else {
+            onSelect(glasses);
+          }
+        }}
+        className={`relative w-full aspect-[4/3] rounded-xl overflow-hidden transition-all duration-300 group border-2 ${
+          selectedGlasses?.id === glasses.id
+            ? "border-amber-500 shadow-lg shadow-amber-500/20"
+            : "border-white/5 hover:border-white/15"
+        } bg-white/[0.03]`}
+      >
+        <div className="absolute inset-0 flex items-center justify-center p-2">
+          <img
+            src={glasses.imageUrl}
+            alt={glasses.name}
+            className="w-full h-full object-contain drop-shadow-lg transition-transform duration-300 group-hover:scale-110 rounded"
+          />
+        </div>
+
+        {selectedGlasses?.id === glasses.id && (
+          <div className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-amber-500 flex items-center justify-center shadow-lg">
+            <Check className="w-3.5 h-3.5 text-black" />
+          </div>
+        )}
+
+        {glasses.category === "custom" && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              handleDeleteCustom(glasses.id);
+            }}
+            className="absolute top-1.5 left-1.5 w-5 h-5 rounded-full bg-red-500/80 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+          >
+            <Trash2 className="w-3 h-3 text-white" />
+          </button>
+        )}
+
+        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-2 pt-6">
+          <p className="text-[10px] font-bold text-white/80 truncate">
+            {glasses.brand}
+          </p>
+          <p className="text-[9px] text-white/50 truncate">
+            {glasses.name}
+          </p>
+        </div>
+      </button>
+    </motion.div>
+  );
 
   return (
     <div className="flex flex-col h-full">
@@ -222,11 +293,19 @@ export default function GlassesGallery({
             Colección
           </h2>
           <div className="flex items-center gap-2">
+            {customGlasses.length > 0 && (
+              <Badge
+                variant="secondary"
+                className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20 text-xs"
+              >
+                +{customGlasses.length} tuyos
+              </Badge>
+            )}
             <Badge
               variant="secondary"
               className="bg-amber-500/10 text-amber-400 border-amber-500/20 text-xs"
             >
-              {allGlasses.length} modelos
+              {defaultGlasses.length + customGlasses.length} modelos
             </Badge>
           </div>
         </div>
@@ -250,111 +329,77 @@ export default function GlassesGallery({
                 {cat.label}
               </Button>
             ))}
+            {customGlasses.length > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setActiveCategory("custom")}
+                className={`rounded-full px-3 py-1 h-7 text-xs font-medium transition-all duration-200 whitespace-nowrap ${
+                  activeCategory === "custom"
+                    ? "bg-emerald-500 text-black hover:bg-emerald-500 shadow-md shadow-emerald-500/20"
+                    : "bg-white/5 text-white/50 hover:bg-white/10 hover:text-white/70 border border-white/5"
+                }`}
+              >
+                <Plus className="w-3.5 h-3.5 mr-1.5" />
+                Mis anteojos
+              </Button>
+            )}
           </div>
         </ScrollArea>
       </div>
 
-      {/* Glasses Grid */}
+      {/* Scrollable content */}
       <ScrollArea className="flex-1 px-4 pb-4">
-        <div className="grid grid-cols-2 gap-2.5">
-          <AnimatePresence mode="popLayout">
-            {filteredGlasses.map((glasses) => (
-              <motion.div
-                key={glasses.id}
-                layout
-                initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.9 }}
-                transition={{ duration: 0.2 }}
-              >
-                <button
-                  onClick={() => {
-                    onCustomGlassesChange(null);
-                    if (selectedGlasses?.id === glasses.id) {
-                      onSelect(null);
-                    } else {
-                      onSelect(glasses);
-                    }
-                  }}
-                  className={`relative w-full aspect-[4/3] rounded-xl overflow-hidden transition-all duration-300 group border-2 ${
-                    selectedGlasses?.id === glasses.id
-                      ? "border-amber-500 shadow-lg shadow-amber-500/20"
-                      : "border-white/5 hover:border-white/15"
-                  } bg-white/[0.03]`}
-                >
-                  {/* Glasses Preview */}
-                  <div className="absolute inset-0 flex items-center justify-center p-2">
-                    <img
-                      src={glasses.imageUrl}
-                      alt={glasses.name}
-                      className="w-full h-full object-contain drop-shadow-lg transition-transform duration-300 group-hover:scale-110 rounded"
-                    />
-                  </div>
-
-                  {/* Selected indicator */}
-                  {selectedGlasses?.id === glasses.id && (
-                    <div className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-amber-500 flex items-center justify-center shadow-lg">
-                      <Check className="w-3.5 h-3.5 text-black" />
-                    </div>
-                  )}
-
-                  {/* Delete custom */}
-                  {glasses.category === "custom" && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDeleteCustom(glasses.id);
-                      }}
-                      className="absolute top-1.5 left-1.5 w-5 h-5 rounded-full bg-red-500/80 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                    >
-                      <Trash2 className="w-3 h-3 text-white" />
-                    </button>
-                  )}
-
-                  {/* Info overlay */}
-                  <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-2 pt-6">
-                    <p className="text-[10px] font-bold text-white/80 truncate">
-                      {glasses.brand}
-                    </p>
-                    <p className="text-[9px] text-white/50 truncate">
-                      {glasses.name}
-                    </p>
-                  </div>
-                </button>
-              </motion.div>
-            ))}
-          </AnimatePresence>
-        </div>
-
-        {/* Custom active indicator */}
-        {customGlassesUrl && (
-          <div className="mt-3 p-3 rounded-xl bg-amber-500/10 border border-amber-500/20">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-6 rounded bg-white/10 flex items-center justify-center overflow-hidden">
-                  <img
-                    src={customGlassesUrl}
-                    alt="Custom"
-                    className="w-full h-full object-contain"
-                  />
-                </div>
-                <span className="text-xs text-amber-300 font-medium">
-                  Anteojos personalizados
-                </span>
-              </div>
-              <button
-                onClick={handleRemoveCustomActive}
-                className="text-amber-400/60 hover:text-amber-400 transition-colors"
-              >
-                <X className="w-4 h-4" />
-              </button>
+        {/* ─── CUSTOM GLASSES SECTION (always at top) ─── */}
+        {(activeCategory === "all" || activeCategory === "custom") && customGlasses.length > 0 && (
+          <div className="mb-4">
+            <div className="flex items-center gap-2 mb-2">
+              <div className="w-1 h-4 rounded-full bg-emerald-400" />
+              <h3 className="text-xs font-bold text-white/60 uppercase tracking-wider">
+                Mis Anteojos
+              </h3>
+              <span className="text-[10px] text-white/30">({customGlasses.length})</span>
             </div>
+            <div className="grid grid-cols-2 gap-2.5">
+              <AnimatePresence mode="popLayout">
+                {filteredCustom.map(renderGlassesCard)}
+              </AnimatePresence>
+            </div>
+          </div>
+        )}
+
+        {/* ─── DEFAULT GLASSES SECTION ─── */}
+        {activeCategory !== "custom" && (
+          <div>
+            {customGlasses.length > 0 && activeCategory === "all" && (
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-1 h-4 rounded-full bg-amber-400" />
+                <h3 className="text-xs font-bold text-white/60 uppercase tracking-wider">
+                  Catálogo
+                </h3>
+                <span className="text-[10px] text-white/30">({defaultGlasses.length})</span>
+              </div>
+            )}
+            <div className="grid grid-cols-2 gap-2.5">
+              <AnimatePresence mode="popLayout">
+                {filteredDefault.map(renderGlassesCard)}
+              </AnimatePresence>
+            </div>
+          </div>
+        )}
+
+        {/* Empty state for custom category */}
+        {activeCategory === "custom" && customGlasses.length === 0 && (
+          <div className="flex flex-col items-center justify-center py-12">
+            <ImageIcon className="w-10 h-10 text-white/10 mb-3" />
+            <p className="text-sm text-white/30">Aún no has subido anteojos</p>
+            <p className="text-xs text-white/20 mt-1">Usa el botón de abajo para agregar</p>
           </div>
         )}
       </ScrollArea>
 
       {/* ═══ PROMINENT UPLOAD BUTTON — Fixed at bottom ═══ */}
-      <div className="px-4 pb-4 pt-2 border-t border-white/[0.06] bg-gradient-to-t from-gray-950 via-gray-950 to-transparent">
+      <div className="px-4 pb-4 pt-2 border-t border-white/[0.06] bg-gray-950/90 backdrop-blur-sm">
         <Dialog open={uploadOpen} onOpenChange={setUploadOpen}>
           <DialogTrigger asChild>
             <Button className="w-full h-12 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-black font-bold rounded-xl shadow-lg shadow-amber-500/20 transition-all duration-300 hover:shadow-amber-500/40 hover:scale-[1.02] active:scale-[0.98] text-sm">
@@ -421,7 +466,7 @@ export default function GlassesGallery({
                       </div>
                       <div className="flex items-center gap-1.5 text-emerald-400">
                         <CheckCircle2 className="w-3.5 h-3.5" />
-                        <span className="text-xs font-medium">Imagen lista — el fondo se eliminará al agregar</span>
+                        <span className="text-xs font-medium">Imagen lista — se eliminará el fondo al agregar</span>
                       </div>
                     </div>
                   ) : isProcessing ? (
@@ -433,7 +478,7 @@ export default function GlassesGallery({
                       <div className="text-center">
                         <p className="text-sm text-white/70 font-medium">
                           {processingStep === 1 && "Cargando imagen..."}
-                          {processingStep === 2 && "Eliminando fondo con IA..."}
+                          {processingStep === 2 && "Eliminando fondo..."}
                           {processingStep === 3 && "Finalizando..."}
                         </p>
                         <p className="text-xs text-white/30 mt-1">Procesando automáticamente</p>
@@ -477,7 +522,7 @@ export default function GlassesGallery({
                 <div className="flex items-start gap-2">
                   <AlertCircle className="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" />
                   <div className="text-[11px] text-white/40 leading-relaxed">
-                    <p className="text-white/60 font-medium mb-1">Consejos para mejor resultado:</p>
+                    <p className="text-white/60 font-medium mb-1">Consejos:</p>
                     <ul className="space-y-0.5 list-disc list-inside">
                       <li>Fondo blanco o claro funciona mejor</li>
                       <li>Vista frontal, sin patillas visibles</li>
