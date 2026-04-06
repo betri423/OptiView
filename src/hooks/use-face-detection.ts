@@ -49,7 +49,6 @@ export function useFaceDetection({
     setError(null);
 
     try {
-      // Dynamic import to avoid SSR issues
       const { FaceLandmarker, FilesetResolver } = await import(
         "@mediapipe/tasks-vision"
       );
@@ -77,7 +76,6 @@ export function useFaceDetection({
       setIsLoading(false);
     } catch (err) {
       console.error("Error loading face landmark model:", err);
-      // Try with GPU fallback
       try {
         const { FaceLandmarker, FilesetResolver } = await import(
           "@mediapipe/tasks-vision"
@@ -170,21 +168,21 @@ export function useFaceDetection({
 
 function processFaceLandmarks(
   landmarks: FaceLandmark[],
-  videoWidth: number,
-  videoHeight: number
-): FaceData {
-  // Key landmark indices for glasses positioning
-  // 33: Right eye outer corner (camera's left)
-  // 133: Right eye inner corner
-  // 263: Left eye outer corner (camera's right)
-  // 362: Left eye inner corner
-  // 168: Glabella (between eyebrows)
-  // 6: Nose bridge
-  // 234: Right side of face
-  // 454: Left side of face
-  // 10: Top of forehead
-  // 152: Chin bottom
-
+  _videoWidth: number,
+  _videoHeight: number
+): FaceData & {
+  eyeDistance: number;
+  leftEyeOuter: FaceLandmark;
+  rightEyeOuter: FaceLandmark;
+  noseBridge: FaceLandmark;
+  glabella: FaceLandmark;
+  leftTemple: FaceLandmark;
+  rightTemple: FaceLandmark;
+  foreheadTop: FaceLandmark;
+  chinBottom: FaceLandmark;
+  faceWidth: number;
+} {
+  // Key landmark indices
   const leftEyeOuter = landmarks[33];
   const rightEyeOuter = landmarks[263];
   const leftEyeInner = landmarks[133];
@@ -193,13 +191,16 @@ function processFaceLandmarks(
   const glabella = landmarks[168];
   const faceLeft = landmarks[234];
   const faceRight = landmarks[454];
+  const foreheadTop = landmarks[10];
+  const chinBottom = landmarks[152];
 
-  // Calculate face center (for glasses positioning)
+  // Calculate face center between the eyes
   const centerX = (leftEyeOuter.x + rightEyeOuter.x) / 2;
   const centerY = (leftEyeOuter.y + rightEyeOuter.y) / 2;
 
-  // Calculate face width for scaling
+  // Calculate face width and height
   const faceWidth = Math.abs(faceRight.x - faceLeft.x);
+  const faceHeight = Math.abs(chinBottom.y - foreheadTop.y);
 
   // Calculate rotation from eye angle
   const dx = rightEyeOuter.x - leftEyeOuter.x;
@@ -217,22 +218,27 @@ function processFaceLandmarks(
     centerX,
     centerY,
     width: faceWidth,
-    height: 0, // Not used
+    height: faceHeight,
     rotation,
     eyeDistance,
     leftEyeOuter,
     rightEyeOuter,
+    leftEyeInner,
+    rightEyeInner,
     noseBridge,
     glabella,
-  } as FaceData & {
-    eyeDistance: number;
-    leftEyeOuter: FaceLandmark;
-    rightEyeOuter: FaceLandmark;
-    noseBridge: FaceLandmark;
-    glabella: FaceLandmark;
+    leftTemple: faceLeft,
+    rightTemple: faceRight,
+    foreheadTop,
+    chinBottom,
+    faceWidth,
   };
 }
 
+/**
+ * Draws photorealistic glasses on a canvas, positioned and oriented using face landmarks.
+ * Optimized for AI-generated photorealistic glasses images with transparent backgrounds.
+ */
 export function drawGlassesOnCanvas(
   ctx: CanvasRenderingContext2D,
   face: FaceData & {
@@ -241,6 +247,9 @@ export function drawGlassesOnCanvas(
     rightEyeOuter: FaceLandmark;
     noseBridge: FaceLandmark;
     glabella: FaceLandmark;
+    leftTemple: FaceLandmark;
+    rightTemple: FaceLandmark;
+    faceWidth: number;
   },
   glassesImage: HTMLImageElement,
   canvasWidth: number,
@@ -250,56 +259,73 @@ export function drawGlassesOnCanvas(
 ) {
   if (!face || !glassesImage) return;
 
-  const faceData = face;
+  // Calculate glasses dimensions based on face width (normalized → pixels)
+  // Use face width for more natural proportions
+  const faceWidthPx = face.faceWidth * canvasWidth;
+  const glassesWidth = faceWidthPx * 1.15 * scaleX;
+  const glassesHeight = glassesWidth * (glassesImage.height / glassesImage.width) * scaleY;
 
-  // Calculate glasses dimensions based on eye distance (normalized → pixels)
-  const eyeDistancePx = faceData.eyeDistance * canvasWidth;
-  const glassesWidth = eyeDistancePx * 1.5 * scaleX;
-  const glassesHeight = glassesWidth * 0.42 * scaleY;
+  // Position centered between the eyes, slightly above
+  const centerX = face.centerX * canvasWidth;
+  const centerY = face.centerY * canvasHeight;
+  const rotation = face.rotation;
 
-  // Position between the eyes
-  const centerX = faceData.centerX * canvasWidth;
-  const centerY = faceData.centerY * canvasHeight;
-  const rotation = faceData.rotation;
-
-  // 3D tilt from z-coordinates for perspective
-  const leftZ = faceData.leftEyeOuter.z || 0;
-  const rightZ = faceData.rightEyeOuter.z || 0;
+  // 3D perspective from z-coordinates
+  const leftZ = face.leftEyeOuter.z || 0;
+  const rightZ = face.rightEyeOuter.z || 0;
   const tiltZ = (leftZ + rightZ) / 2;
-  const perspectiveSkew = tiltZ * 0.4;
+  const perspectiveSkew = tiltZ * 0.5;
 
   ctx.save();
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
 
-  // ─── STEP 1: Contact shadow (on the face, below the glasses) ───
+  // ─── STEP 1: Soft contact shadow beneath glasses ───
+  // This creates the illusion that glasses are sitting ON the face
   ctx.save();
-  ctx.translate(centerX + 3, centerY + 4);
+  ctx.translate(centerX + 2, centerY + 3);
   ctx.rotate(rotation);
   ctx.transform(1, 0, perspectiveSkew, 1, 0, 0);
-  ctx.globalAlpha = 0.18;
-  ctx.filter = 'blur(6px)';
+  ctx.globalAlpha = 0.15;
+  ctx.filter = 'blur(8px)';
   ctx.drawImage(
     glassesImage,
-    -glassesWidth / 2 - 2,
-    -glassesHeight / 2 + 2,
-    glassesWidth + 4,
-    glassesHeight + 4
+    -glassesWidth / 2 - 1,
+    -glassesHeight / 2 + 3,
+    glassesWidth + 2,
+    glassesHeight + 2
   );
   ctx.filter = 'none';
   ctx.globalAlpha = 1;
   ctx.restore();
 
-  // ─── STEP 2: Main glasses image ───
+  // ─── STEP 2: Second shadow layer (softer, wider) ───
+  ctx.save();
+  ctx.translate(centerX + 3, centerY + 5);
+  ctx.rotate(rotation);
+  ctx.transform(1, 0, perspectiveSkew, 1, 0, 0);
+  ctx.globalAlpha = 0.06;
+  ctx.filter = 'blur(16px)';
+  ctx.drawImage(
+    glassesImage,
+    -glassesWidth / 2 - 4,
+    -glassesHeight / 2 + 5,
+    glassesWidth + 8,
+    glassesHeight + 8
+  );
+  ctx.filter = 'none';
+  ctx.globalAlpha = 1;
+  ctx.restore();
+
+  // ─── STEP 3: Main glasses image with subtle drop shadow ───
   ctx.translate(centerX, centerY);
   ctx.rotate(rotation);
   ctx.transform(1, 0, perspectiveSkew, 1, 0, 0);
 
-  // Subtle drop shadow for depth
-  ctx.shadowColor = 'rgba(0, 0, 0, 0.25)';
-  ctx.shadowBlur = 8;
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.3)';
+  ctx.shadowBlur = 12;
   ctx.shadowOffsetX = 1;
-  ctx.shadowOffsetY = 3;
+  ctx.shadowOffsetY = 4;
 
   ctx.drawImage(
     glassesImage,
@@ -309,92 +335,74 @@ export function drawGlassesOnCanvas(
     glassesHeight
   );
 
-  // Clear shadow for reflections
+  // Clear shadow
   ctx.shadowColor = 'transparent';
   ctx.shadowBlur = 0;
   ctx.shadowOffsetX = 0;
   ctx.shadowOffsetY = 0;
 
-  // ─── STEP 3: Realistic lens reflections ───
-  const lensRx = glassesWidth * 0.32;
-  const lensRy = glassesHeight * 0.55;
-  const lensY = glassesHeight * 0.02;
+  // ─── STEP 4: Subtle ambient light reflection on top of lenses ───
+  // Adds realism by simulating environment light reflecting off the curved lenses
+  const lensWidth = glassesWidth * 0.28;
+  const lensHeight = glassesHeight * 0.6;
+  const lensYOffset = glassesHeight * 0.02;
 
-  // Left lens — main highlight arc
+  // Left lens reflection
   ctx.save();
-  ctx.globalAlpha = 0.12;
-  const leftRef = ctx.createRadialGradient(
-    -glassesWidth * 0.25, lensY - lensRy * 0.3,
+  ctx.globalAlpha = 0.08;
+  const leftRefGrad = ctx.createRadialGradient(
+    -glassesWidth * 0.24, lensYOffset - lensHeight * 0.25,
     0,
-    -glassesWidth * 0.25, lensY,
-    lensRx
+    -glassesWidth * 0.24, lensYOffset,
+    lensWidth
   );
-  leftRef.addColorStop(0, 'rgba(255, 255, 255, 0.9)');
-  leftRef.addColorStop(0.3, 'rgba(255, 255, 255, 0.3)');
-  leftRef.addColorStop(1, 'rgba(255, 255, 255, 0)');
-  ctx.fillStyle = leftRef;
+  leftRefGrad.addColorStop(0, 'rgba(255, 255, 255, 1)');
+  leftRefGrad.addColorStop(0.4, 'rgba(255, 255, 255, 0.3)');
+  leftRefGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+  ctx.fillStyle = leftRefGrad;
   ctx.beginPath();
-  ctx.ellipse(-glassesWidth * 0.25, lensY, lensRx, lensRy, -0.15, 0, Math.PI * 2);
+  ctx.ellipse(-glassesWidth * 0.24, lensYOffset, lensWidth, lensHeight, -0.1, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
 
-  // Left lens — sharp edge highlight
+  // Right lens reflection
   ctx.save();
-  ctx.globalAlpha = 0.07;
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  ctx.ellipse(-glassesWidth * 0.25, lensY, lensRx - 2, lensRy - 2, -0.15, -2.5, -0.8);
-  ctx.stroke();
-  ctx.restore();
-
-  // Right lens — main highlight arc
-  ctx.save();
-  ctx.globalAlpha = 0.10;
-  const rightRef = ctx.createRadialGradient(
-    glassesWidth * 0.25, lensY - lensRy * 0.3,
+  ctx.globalAlpha = 0.06;
+  const rightRefGrad = ctx.createRadialGradient(
+    glassesWidth * 0.24, lensYOffset - lensHeight * 0.25,
     0,
-    glassesWidth * 0.25, lensY,
-    lensRx
+    glassesWidth * 0.24, lensYOffset,
+    lensWidth
   );
-  rightRef.addColorStop(0, 'rgba(255, 255, 255, 0.7)');
-  rightRef.addColorStop(0.3, 'rgba(255, 255, 255, 0.2)');
-  rightRef.addColorStop(1, 'rgba(255, 255, 255, 0)');
-  ctx.fillStyle = rightRef;
+  rightRefGrad.addColorStop(0, 'rgba(255, 255, 255, 0.8)');
+  rightRefGrad.addColorStop(0.4, 'rgba(255, 255, 255, 0.2)');
+  rightRefGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+  ctx.fillStyle = rightRefGrad;
   ctx.beginPath();
-  ctx.ellipse(glassesWidth * 0.25, lensY, lensRx, lensRy, -0.15, 0, Math.PI * 2);
+  ctx.ellipse(glassesWidth * 0.24, lensYOffset, lensWidth, lensHeight, -0.1, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
 
-  // Right lens — sharp edge highlight
-  ctx.save();
-  ctx.globalAlpha = 0.06;
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  ctx.ellipse(glassesWidth * 0.25, lensY, lensRx - 2, lensRy - 2, -0.15, -2.5, -0.8);
-  ctx.stroke();
-  ctx.restore();
-
-  // ─── STEP 4: Frame edge light (top rim catch light) ───
-  ctx.save();
-  ctx.globalAlpha = 0.06;
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(-glassesWidth * 0.42, -glassesHeight * 0.35);
-  ctx.quadraticCurveTo(-glassesWidth * 0.25, -glassesHeight * 0.48, 0, -glassesHeight * 0.42);
-  ctx.quadraticCurveTo(glassesWidth * 0.25, -glassesHeight * 0.48, glassesWidth * 0.42, -glassesHeight * 0.35);
-  ctx.stroke();
-  ctx.restore();
-
-  // ─── STEP 5: Subtle bottom gradient for depth ───
+  // ─── STEP 5: Edge highlight on top frame ───
+  // Simulates light catching the top edge of the frame
   ctx.save();
   ctx.globalAlpha = 0.04;
-  const bottomGrad = ctx.createLinearGradient(0, glassesHeight * 0.1, 0, glassesHeight * 0.5);
-  bottomGrad.addColorStop(0, 'rgba(0, 0, 0, 0)');
-  bottomGrad.addColorStop(1, 'rgba(0, 0, 0, 0.5)');
-  ctx.fillStyle = bottomGrad;
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.moveTo(-glassesWidth * 0.44, -glassesHeight * 0.38);
+  ctx.quadraticCurveTo(-glassesWidth * 0.25, -glassesHeight * 0.50, 0, -glassesHeight * 0.45);
+  ctx.quadraticCurveTo(glassesWidth * 0.25, -glassesHeight * 0.50, glassesWidth * 0.44, -glassesHeight * 0.38);
+  ctx.stroke();
+  ctx.restore();
+
+  // ─── STEP 6: Subtle vignette at bottom of glasses for depth ───
+  ctx.save();
+  ctx.globalAlpha = 0.03;
+  const bottomVignette = ctx.createLinearGradient(0, glassesHeight * 0.15, 0, glassesHeight * 0.5);
+  bottomVignette.addColorStop(0, 'rgba(0, 0, 0, 0)');
+  bottomVignette.addColorStop(1, 'rgba(0, 0, 0, 0.6)');
+  ctx.fillStyle = bottomVignette;
   ctx.fillRect(-glassesWidth / 2, -glassesHeight / 2, glassesWidth, glassesHeight);
   ctx.restore();
 

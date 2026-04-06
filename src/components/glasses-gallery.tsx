@@ -111,7 +111,7 @@ export default function GlassesGallery({
       price: "Custom",
       color: "#888",
       imageUrl: previewUrl,
-      svgDataUrl: previewUrl,
+      overlayUrl: previewUrl,
     };
 
     setCustomGlasses((prev) => [...prev, newGlasses]);
@@ -205,10 +205,10 @@ export default function GlassesGallery({
                       : "border-white/5 hover:border-white/15"
                   } bg-white/[0.03]`}
                 >
-                  {/* Glasses Preview — use HD photo for gallery, SVG fallback for custom */}
+                  {/* Glasses Preview */}
                   <div className="absolute inset-0 flex items-center justify-center p-2">
                     <img
-                      src={glasses.imageUrl || glasses.svgDataUrl}
+                      src={glasses.imageUrl}
                       alt={glasses.name}
                       className="w-full h-full object-contain drop-shadow-lg transition-transform duration-300 group-hover:scale-110 rounded"
                     />

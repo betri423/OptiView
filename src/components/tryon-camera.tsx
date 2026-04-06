@@ -7,6 +7,7 @@ import {
   type FaceData,
 } from "@/hooks/use-face-detection";
 import type { GlassesModel } from "@/lib/glasses-data";
+import { loadTransparentImage } from "@/lib/image-utils";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import {
@@ -45,6 +46,7 @@ export default function TryOnCamera({
   const [offsetY, setOffsetY] = useState(0);
   const [mirror, setMirror] = useState(true);
   const [showControls, setShowControls] = useState(false);
+  const [imageLoading, setImageLoading] = useState(false);
 
   const { isLoading: modelLoading, isReady: modelReady, loadModel, error: modelError } =
     useFaceDetection({
@@ -60,20 +62,37 @@ export default function TryOnCamera({
       },
     });
 
-  // Load glasses image when selection changes
+  // Load glasses image when selection changes — with background removal
   useEffect(() => {
-    const url = customGlassesUrl || selectedGlasses?.svgDataUrl || null;
+    const url = customGlassesUrl || selectedGlasses?.overlayUrl || null;
     if (!url) {
       glassesImgRef.current = null;
       return;
     }
 
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    img.onload = () => {
-      glassesImgRef.current = img;
-    };
-    img.src = url;
+    setImageLoading(true);
+
+    if (customGlassesUrl) {
+      // Custom uploads — load directly (user provides transparent images)
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => {
+        glassesImgRef.current = img;
+        setImageLoading(false);
+      };
+      img.onerror = () => {
+        setImageLoading(false);
+      };
+      img.src = url;
+    } else {
+      // AI-generated glasses — remove white background for transparency
+      loadTransparentImage(url).then((processed) => {
+        if (processed) {
+          glassesImgRef.current = processed;
+        }
+        setImageLoading(false);
+      });
+    }
   }, [selectedGlasses, customGlassesUrl]);
 
   // Render loop for drawing glasses overlay
@@ -256,6 +275,16 @@ export default function TryOnCamera({
         ref={canvasRef}
         className="absolute inset-0 w-full h-full pointer-events-none z-10"
       />
+
+      {/* Image loading indicator */}
+      {imageLoading && cameraActive && (
+        <div className="absolute bottom-16 left-1/2 -translate-x-1/2 z-30">
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-500/15 backdrop-blur-xl border border-amber-500/25">
+            <Loader2 className="w-3 h-3 text-amber-400 animate-spin" />
+            <span className="text-xs text-amber-300 font-medium">Cargando modelo...</span>
+          </div>
+        </div>
+      )}
 
       {/* ─── Idle State ─── */}
       {!cameraActive && !cameraLoading && !modelLoading && (
