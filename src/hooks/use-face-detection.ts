@@ -253,40 +253,54 @@ export function drawGlassesOnCanvas(
   const faceData = face;
 
   // Calculate glasses dimensions based on eye distance (normalized → pixels)
-  // Multiplier 1.5: SVG models already include temple arm padding
   const eyeDistancePx = faceData.eyeDistance * canvasWidth;
   const glassesWidth = eyeDistancePx * 1.5 * scaleX;
   const glassesHeight = glassesWidth * 0.42 * scaleY;
 
-  // Calculate position
+  // Position between the eyes
   const centerX = faceData.centerX * canvasWidth;
-  const centerY = faceData.centerY * canvasHeight - glassesHeight * 0.05;
+  const centerY = faceData.centerY * canvasHeight;
   const rotation = faceData.rotation;
 
-  // 3D tilt from z-coordinates
+  // 3D tilt from z-coordinates for perspective
   const leftZ = faceData.leftEyeOuter.z || 0;
   const rightZ = faceData.rightEyeOuter.z || 0;
   const tiltZ = (leftZ + rightZ) / 2;
-  const perspectiveSkew = tiltZ * 0.5; // Subtle perspective
+  const perspectiveSkew = tiltZ * 0.4;
 
   ctx.save();
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
 
-  // Move to center position
+  // ─── STEP 1: Contact shadow (on the face, below the glasses) ───
+  ctx.save();
+  ctx.translate(centerX + 3, centerY + 4);
+  ctx.rotate(rotation);
+  ctx.transform(1, 0, perspectiveSkew, 1, 0, 0);
+  ctx.globalAlpha = 0.18;
+  ctx.filter = 'blur(6px)';
+  ctx.drawImage(
+    glassesImage,
+    -glassesWidth / 2 - 2,
+    -glassesHeight / 2 + 2,
+    glassesWidth + 4,
+    glassesHeight + 4
+  );
+  ctx.filter = 'none';
+  ctx.globalAlpha = 1;
+  ctx.restore();
+
+  // ─── STEP 2: Main glasses image ───
   ctx.translate(centerX, centerY);
   ctx.rotate(rotation);
-
-  // Apply subtle perspective transform for 3D effect
   ctx.transform(1, 0, perspectiveSkew, 1, 0, 0);
 
-  // Shadow
-  ctx.shadowColor = 'rgba(0, 0, 0, 0.35)';
-  ctx.shadowBlur = 10;
-  ctx.shadowOffsetX = 2;
-  ctx.shadowOffsetY = 4;
+  // Subtle drop shadow for depth
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.25)';
+  ctx.shadowBlur = 8;
+  ctx.shadowOffsetX = 1;
+  ctx.shadowOffsetY = 3;
 
-  // Draw glasses
   ctx.drawImage(
     glassesImage,
     -glassesWidth / 2,
@@ -295,40 +309,94 @@ export function drawGlassesOnCanvas(
     glassesHeight
   );
 
-  // Remove shadow for lens reflections
+  // Clear shadow for reflections
   ctx.shadowColor = 'transparent';
   ctx.shadowBlur = 0;
   ctx.shadowOffsetX = 0;
   ctx.shadowOffsetY = 0;
 
-  // Add lens reflection effect
-  const lensWidth = glassesWidth * 0.38;
-  const lensHeight = glassesHeight * 0.65;
-  const lensY = -glassesHeight * 0.08;
+  // ─── STEP 3: Realistic lens reflections ───
+  const lensRx = glassesWidth * 0.32;
+  const lensRy = glassesHeight * 0.55;
+  const lensY = glassesHeight * 0.02;
 
-  // Left lens reflection
-  const leftGrad = ctx.createLinearGradient(
-    -glassesWidth * 0.27, lensY,
-    -glassesWidth * 0.27, lensY + lensHeight * 0.5
+  // Left lens — main highlight arc
+  ctx.save();
+  ctx.globalAlpha = 0.12;
+  const leftRef = ctx.createRadialGradient(
+    -glassesWidth * 0.25, lensY - lensRy * 0.3,
+    0,
+    -glassesWidth * 0.25, lensY,
+    lensRx
   );
-  leftGrad.addColorStop(0, 'rgba(255, 255, 255, 0.08)');
-  leftGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
-  ctx.fillStyle = leftGrad;
+  leftRef.addColorStop(0, 'rgba(255, 255, 255, 0.9)');
+  leftRef.addColorStop(0.3, 'rgba(255, 255, 255, 0.3)');
+  leftRef.addColorStop(1, 'rgba(255, 255, 255, 0)');
+  ctx.fillStyle = leftRef;
   ctx.beginPath();
-  ctx.ellipse(-glassesWidth * 0.27, lensY + lensHeight * 0.2, lensWidth * 0.35, lensHeight * 0.3, -0.2, 0, Math.PI * 2);
+  ctx.ellipse(-glassesWidth * 0.25, lensY, lensRx, lensRy, -0.15, 0, Math.PI * 2);
   ctx.fill();
+  ctx.restore();
 
-  // Right lens reflection
-  const rightGrad = ctx.createLinearGradient(
-    glassesWidth * 0.27, lensY,
-    glassesWidth * 0.27, lensY + lensHeight * 0.5
-  );
-  rightGrad.addColorStop(0, 'rgba(255, 255, 255, 0.08)');
-  rightGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
-  ctx.fillStyle = rightGrad;
+  // Left lens — sharp edge highlight
+  ctx.save();
+  ctx.globalAlpha = 0.07;
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+  ctx.lineWidth = 1.5;
   ctx.beginPath();
-  ctx.ellipse(glassesWidth * 0.27, lensY + lensHeight * 0.2, lensWidth * 0.35, lensHeight * 0.3, -0.2, 0, Math.PI * 2);
+  ctx.ellipse(-glassesWidth * 0.25, lensY, lensRx - 2, lensRy - 2, -0.15, -2.5, -0.8);
+  ctx.stroke();
+  ctx.restore();
+
+  // Right lens — main highlight arc
+  ctx.save();
+  ctx.globalAlpha = 0.10;
+  const rightRef = ctx.createRadialGradient(
+    glassesWidth * 0.25, lensY - lensRy * 0.3,
+    0,
+    glassesWidth * 0.25, lensY,
+    lensRx
+  );
+  rightRef.addColorStop(0, 'rgba(255, 255, 255, 0.7)');
+  rightRef.addColorStop(0.3, 'rgba(255, 255, 255, 0.2)');
+  rightRef.addColorStop(1, 'rgba(255, 255, 255, 0)');
+  ctx.fillStyle = rightRef;
+  ctx.beginPath();
+  ctx.ellipse(glassesWidth * 0.25, lensY, lensRx, lensRy, -0.15, 0, Math.PI * 2);
   ctx.fill();
+  ctx.restore();
+
+  // Right lens — sharp edge highlight
+  ctx.save();
+  ctx.globalAlpha = 0.06;
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.ellipse(glassesWidth * 0.25, lensY, lensRx - 2, lensRy - 2, -0.15, -2.5, -0.8);
+  ctx.stroke();
+  ctx.restore();
+
+  // ─── STEP 4: Frame edge light (top rim catch light) ───
+  ctx.save();
+  ctx.globalAlpha = 0.06;
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(-glassesWidth * 0.42, -glassesHeight * 0.35);
+  ctx.quadraticCurveTo(-glassesWidth * 0.25, -glassesHeight * 0.48, 0, -glassesHeight * 0.42);
+  ctx.quadraticCurveTo(glassesWidth * 0.25, -glassesHeight * 0.48, glassesWidth * 0.42, -glassesHeight * 0.35);
+  ctx.stroke();
+  ctx.restore();
+
+  // ─── STEP 5: Subtle bottom gradient for depth ───
+  ctx.save();
+  ctx.globalAlpha = 0.04;
+  const bottomGrad = ctx.createLinearGradient(0, glassesHeight * 0.1, 0, glassesHeight * 0.5);
+  bottomGrad.addColorStop(0, 'rgba(0, 0, 0, 0)');
+  bottomGrad.addColorStop(1, 'rgba(0, 0, 0, 0.5)');
+  ctx.fillStyle = bottomGrad;
+  ctx.fillRect(-glassesWidth / 2, -glassesHeight / 2, glassesWidth, glassesHeight);
+  ctx.restore();
 
   ctx.restore();
 }
