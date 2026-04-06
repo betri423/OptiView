@@ -172,37 +172,23 @@ export default function GlassesGallery({
         img.src = previewUrl;
       });
 
-      // Try to remove background
+      // Remove background — algorithm auto-detects ANY background color
       setProcessingStep(2);
-      const processedImg = await removeBackground(img);
+      const result = await removeBackground(img);
       setProcessingStep(3);
 
-      // Validate processed image has content
-      const testCanvas = document.createElement("canvas");
-      testCanvas.width = processedImg.naturalWidth || processedImg.width;
-      testCanvas.height = processedImg.naturalHeight || processedImg.height;
-      const testCtx = testCanvas.getContext("2d");
-      if (testCtx) {
-        testCtx.drawImage(processedImg, 0, 0);
-        const testData = testCtx.getImageData(0, 0, testCanvas.width, testCanvas.height).data;
-        let hasContent = false;
-        for (let i = 3; i < testData.length; i += 4) {
-          if (testData[i] > 10) {
-            hasContent = true;
-            break;
-          }
-        }
-        if (!hasContent) {
-          // Processed image is empty, use original
-          finishUpload(previewUrl, previewUrl, uploadName);
-          return;
-        }
-      }
+      // If result is the same image reference (already transparent), convert to canvas for consistent handling
+      const finalCanvas = document.createElement("canvas");
+      finalCanvas.width = result.naturalWidth || result.width;
+      finalCanvas.height = result.naturalHeight || result.height;
+      const finalCtx = finalCanvas.getContext("2d")!;
+      finalCtx.drawImage(result, 0, 0);
+      const finalUrl = finalCanvas.toDataURL("image/png");
 
-      finishUpload(processedImg.src, processedImg.src, uploadName);
+      finishUpload(finalUrl, finalUrl, uploadName);
     } catch (err) {
       console.error("Error processing image:", err);
-      // Fallback: use original image without processing
+      // Fallback: use original
       finishUpload(previewUrl, previewUrl, uploadName);
     } finally {
       setIsProcessing(false);
