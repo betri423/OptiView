@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect } from "react";
 import TryOnCamera from "@/components/tryon-camera";
 import GlassesGallery from "@/components/glasses-gallery";
 import { Button } from "@/components/ui/button";
@@ -93,20 +93,22 @@ export default function Home() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [showHero, setShowHero] = useState(true);
 
-  // Stable callbacks with refs — prevents stale closures in async child components
-  const addCustomRef = useRef<(g: GlassesModel) => void>();
-  const selectRef = useRef<(g: GlassesModel | null) => void>();
-  const deleteCustomRef = useRef<(id: string) => void>();
+  // Simple stable callbacks using functional setState — no stale closures possible
+  const handleAddCustom = useCallback((g: GlassesModel) => {
+    setCustomGlasses((prev) => {
+      console.log('[OptiView] Adding custom glasses:', g.id, g.name);
+      return [g, ...prev];
+    });
+  }, []);
 
-  // Keep refs in sync with latest state setters
-  useEffect(() => {
-    addCustomRef.current = (g: GlassesModel) => setCustomGlasses((prev) => [g, ...prev]);
-    selectRef.current = setSelectedGlasses;
-    deleteCustomRef.current = (id: string) => {
-      setCustomGlasses((prev) => prev.filter((g) => g.id !== id));
-      setSelectedGlasses((cur) => (cur?.id === id ? null : cur));
-    };
-  });
+  const handleSelectGlasses = useCallback((g: GlassesModel | null) => {
+    setSelectedGlasses(g);
+  }, []);
+
+  const handleDeleteCustom = useCallback((id: string) => {
+    setCustomGlasses((prev) => prev.filter((g) => g.id !== id));
+    setSelectedGlasses((cur) => (cur?.id === id ? null : cur));
+  }, []);
 
   const handleStartTryOn = useCallback(() => {
     setShowHero(false);
@@ -498,10 +500,10 @@ export default function Home() {
               <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] overflow-hidden h-[600px] lg:h-[calc(100vh-7rem)]">
                 <GlassesGallery
                   selectedGlasses={selectedGlasses}
-                  onSelect={selectRef}
+                  onSelect={handleSelectGlasses}
                   customGlasses={customGlasses}
-                  onAddCustom={addCustomRef}
-                  onDeleteCustom={deleteCustomRef}
+                  onAddCustom={handleAddCustom}
+                  onDeleteCustom={handleDeleteCustom}
                 />
               </div>
             </motion.div>

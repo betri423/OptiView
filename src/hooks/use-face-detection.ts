@@ -114,7 +114,13 @@ export function useFaceDetection({
     const video = videoRef.current;
     const landmarker = faceLandmarkerRef.current;
 
-    if (!video || !landmarker || video.readyState < 2) {
+    if (!video || !landmarker) {
+      animFrameRef.current = requestAnimationFrame(detect);
+      return;
+    }
+
+    // Ensure video has enough data to process
+    if (video.readyState < 2 || video.videoWidth === 0 || video.videoHeight === 0) {
       animFrameRef.current = requestAnimationFrame(detect);
       return;
     }
@@ -136,8 +142,10 @@ export function useFaceDetection({
       } else {
         onFaceLostRef.current?.();
       }
-    } catch {
-      // Silently continue
+    } catch (err) {
+      // Silently ignore detection errors — they're common during camera setup/teardown
+      // Reset timestamp to allow fresh detection on next frame
+      lastTimestampRef.current = -1;
     }
 
     animFrameRef.current = requestAnimationFrame(detect);

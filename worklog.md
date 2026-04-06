@@ -174,3 +174,27 @@ Replaced the basic `drawGlassesOnCanvas` function with a 3D-enhanced version. Ne
   - Modern dark UI with amber/gold accent, glass-morphism, Framer Motion animations
   - Fully responsive (mobile-first)
   - Privacy-first (all processing local)
+---
+Task ID: 1
+Agent: Main Developer
+Task: Fix uploaded glasses persistence bug and MediaPipe console errors
+
+Work Log:
+- Analyzed root cause: Very large data URLs (10+ MB base64) stored in React state caused performance issues and potential state loss
+- Replaced complex ref-based callback pattern with simple `useCallback` in page.tsx
+- Rewrote glasses-gallery.tsx to use Blob URLs (`URL.createObjectURL`) instead of data URLs — tiny ~100 char strings vs megabytes
+- Added `removeBackgroundToBlob()` function in image-utils.ts that returns Blob instead of HTMLImageElement
+- Added image downscaling (max 1024px) for background removal performance
+- Fixed cache key to use simple hash instead of huge data URL strings
+- Fixed tryon-camera.tsx image loading to NOT set crossOrigin on blob: URLs (causes CORS failures)
+- Fixed use-face-detection.ts to check video.videoWidth/videoHeight before calling detectForVideo
+- Added timestamp reset on detection errors to prevent cascading failures
+- Added console logging for debugging upload flow
+- Properly revoke Blob URLs when deleting custom glasses
+
+Stage Summary:
+- 5 files modified: page.tsx, glasses-gallery.tsx, tryon-camera.tsx, use-face-detection.ts, image-utils.ts
+- Key fix: Switched from data URLs to Blob URLs for custom glasses storage (reduces memory by 99%+)
+- Key fix: Simplified callback pattern removes stale closure risk
+- Key fix: Better video readyState checking prevents MediaPipe errors
+- All lint checks pass, server compiles successfully

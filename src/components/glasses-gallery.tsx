@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useRef, useCallback, type MutableRefObject } from "react";
+import { useState, useRef, useCallback } from "react";
 import { type GlassesModel, defaultGlasses, GLASSES_CATEGORIES } from "@/lib/glasses-data";
-import { removeBackground } from "@/lib/image-utils";
+import { removeBackgroundToBlob } from "@/lib/image-utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -53,10 +53,10 @@ const categoryIcons: Record<string, React.ReactNode> = {
 
 interface GlassesGalleryProps {
   selectedGlasses: GlassesModel | null;
-  onSelect: MutableRefObject<(glasses: GlassesModel | null) => void>;
+  onSelect: (glasses: GlassesModel | null) => void;
   customGlasses: GlassesModel[];
-  onAddCustom: MutableRefObject<(glasses: GlassesModel) => void>;
-  onDeleteCustom: MutableRefObject<(id: string) => void>;
+  onAddCustom: (glasses: GlassesModel) => void;
+  onDeleteCustom: (id: string) => void;
 }
 
 export default function GlassesGallery({
@@ -74,6 +74,8 @@ export default function GlassesGallery({
   const [isProcessing, setIsProcessing] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const [processingStep, setProcessingStep] = useState(0);
+  // Store the file reference so we can process it later
+  const pendingFileRef = useRef<File | null>(null);
 
   // Separate custom glasses for display
   const filteredDefault =
@@ -95,6 +97,8 @@ export default function GlassesGallery({
       toast.error("La imagen no debe superar 10MB");
       return;
     }
+    // Store file for later processing
+    pendingFileRef.current = file;
     const reader = new FileReader();
     reader.onload = (ev) => {
       setPreviewUrl(ev.target?.result as string);
@@ -133,9 +137,13 @@ export default function GlassesGallery({
     setIsDragOver(false);
   }, []);
 
-  // Upload handler — uses refs so it's NEVER stale, even during async processing
+  // Upload handler — processes image, creates Blob URL, adds to gallery
   const handleUpload = useCallback(async () => {
-    if (!previewUrl) {
+    const currentPreview = previewUrl;
+    const currentName = uploadName;
+    const file = pendingFileRef.current;
+
+    if (!currentPreview || !file) {
       toast.error("Selecciona una imagen primero");
       return;
     }
@@ -143,33 +151,27 @@ export default function GlassesGallery({
     setIsProcessing(true);
     setProcessingStep(1);
 
-    // Capture current preview data
-    const currentPreview = previewUrl;
-    const currentName = uploadName;
-
     try {
+      // Load image from file (not from data URL — more reliable for large images)
       const img = new Image();
-      // Don't set crossOrigin for data URLs — it causes failures in some browsers
+      const objectUrl = URL.createObjectURL(file);
       await new Promise<void>((resolve, reject) => {
         img.onload = () => resolve();
-        img.onerror = () => reject(new Error("Failed to load image"));
-        img.src = currentPreview;
+        img.onerror = () => reject(new Error("No se pudo cargar la imagen"));
+        img.src = objectUrl;
       });
 
-      // Remove background
+      // Remove background and get a Blob
       setProcessingStep(2);
-      const result = await removeBackground(img);
+      const blob = await removeBackgroundToBlob(img);
+      // Revoke the object URL used for loading
+      URL.revokeObjectURL(objectUrl);
+
+      // Create a Blob URL — tiny string, fast state updates
+      const blobUrl = URL.createObjectURL(blob);
       setProcessingStep(3);
 
-      // Convert result to data URL
-      const finalCanvas = document.createElement("canvas");
-      finalCanvas.width = result.naturalWidth || result.width;
-      finalCanvas.height = result.naturalHeight || result.height;
-      const finalCtx = finalCanvas.getContext("2d")!;
-      finalCtx.drawImage(result, 0, 0);
-      const finalUrl = finalCanvas.toDataURL("image/png");
-
-      // Create the glasses model
+      // Create the glasses model with Blob URL
       const newGlasses: GlassesModel = {
         id: `custom-${Date.now()}`,
         name: currentName || "Personalizado",
@@ -177,24 +179,32 @@ export default function GlassesGallery({
         category: "custom",
         price: "Custom",
         color: "#888",
-        imageUrl: finalUrl,
-        overlayUrl: finalUrl,
+        imageUrl: blobUrl,
+        overlayUrl: blobUrl,
       };
 
-      // Use .current to always call the LATEST version of the callback
-      onAddCustom.current(newGlasses);
-      onSelect.current(newGlasses);
+      console.log("[Gallery] Adding glasses to gallery:", newGlasses.id, newGlasses.name);
+      console.log("[Gallery] Blob URL:", blobUrl.substring(0, 60) + "...");
+
+      // Add to parent state FIRST, then select
+      onAddCustom(newGlasses);
+      onSelect(newGlasses);
 
       // Reset form
       setPreviewUrl(null);
       setUploadName("");
       setUploadOpen(false);
       setActiveCategory("all");
+      pendingFileRef.current = null;
 
       toast.success("✅ Anteojos agregados y seleccionados");
     } catch (err) {
-      console.error("Error processing image:", err);
+      console.error("[Gallery] Error processing image:", err);
+
       // Fallback: use original image without background removal
+      const fallbackBlob = new Blob([await file.arrayBuffer()], { type: file.type });
+      const fallbackUrl = URL.createObjectURL(fallbackBlob);
+
       const newGlasses: GlassesModel = {
         id: `custom-${Date.now()}`,
         name: currentName || "Personalizado",
@@ -202,23 +212,25 @@ export default function GlassesGallery({
         category: "custom",
         price: "Custom",
         color: "#888",
-        imageUrl: currentPreview,
-        overlayUrl: currentPreview,
+        imageUrl: fallbackUrl,
+        overlayUrl: fallbackUrl,
       };
 
-      onAddCustom.current(newGlasses);
-      onSelect.current(newGlasses);
+      console.log("[Gallery] Fallback — adding without BG removal:", newGlasses.id);
+      onAddCustom(newGlasses);
+      onSelect(newGlasses);
       setPreviewUrl(null);
       setUploadName("");
       setUploadOpen(false);
       setActiveCategory("all");
+      pendingFileRef.current = null;
 
       toast.success("Anteojos agregados (sin eliminación de fondo)");
     } finally {
       setIsProcessing(false);
       setProcessingStep(0);
     }
-  }, [previewUrl, uploadName]); // ← Only local state deps, refs are stable
+  }, [previewUrl, uploadName, onAddCustom, onSelect]);
 
   // Render a single glasses card
   const renderGlassesCard = (glasses: GlassesModel) => (
@@ -233,9 +245,9 @@ export default function GlassesGallery({
       <button
         onClick={() => {
           if (selectedGlasses?.id === glasses.id) {
-            onSelect.current(null);
+            onSelect(null);
           } else {
-            onSelect.current(glasses);
+            onSelect(glasses);
           }
         }}
         className={`relative w-full aspect-[4/3] rounded-xl overflow-hidden transition-all duration-300 group border-2 ${
@@ -262,7 +274,11 @@ export default function GlassesGallery({
           <button
             onClick={(e) => {
               e.stopPropagation();
-              onDeleteCustom.current(glasses.id);
+              // Revoke Blob URL before deleting
+              if (glasses.imageUrl.startsWith("blob:")) {
+                URL.revokeObjectURL(glasses.imageUrl);
+              }
+              onDeleteCustom(glasses.id);
               toast.success("Anteojos eliminados");
             }}
             className="absolute top-1.5 left-1.5 w-5 h-5 rounded-full bg-red-500/80 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
@@ -457,6 +473,7 @@ export default function GlassesGallery({
                           onClick={(e) => {
                             e.stopPropagation();
                             setPreviewUrl(null);
+                            pendingFileRef.current = null;
                           }}
                           className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-red-500 flex items-center justify-center hover:bg-red-400 transition-colors"
                         >
@@ -538,6 +555,7 @@ export default function GlassesGallery({
                     setUploadOpen(false);
                     setPreviewUrl(null);
                     setUploadName("");
+                    pendingFileRef.current = null;
                   }}
                   disabled={isProcessing}
                   className="flex-1 border-white/10 text-white/60 hover:bg-white/5"

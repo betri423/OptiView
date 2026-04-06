@@ -9,8 +9,21 @@
  * - More aggressive tolerance
  * - Two-pass approach: first flood fill, then color-based cleanup
  * - Better edge smoothing
+ * - Blob URL output (tiny strings, not huge base64)
  */
 
+// Cache using simple hash of image dimensions + first few pixels (avoids huge data URL keys)
+function simpleHash(str: string): string {
+  let hash = 0;
+  for (let i = 0; i < Math.min(str.length, 500); i++) {
+    const char = str.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash; // Convert to 32-bit integer
+  }
+  return `h_${Math.abs(hash).toString(36)}`;
+}
+
+const processedBlobCache = new Map<string, string>(); // hash → blobUrl
 const processedImageCache = new Map<string, HTMLImageElement>();
 
 /**
@@ -50,7 +63,7 @@ function colorDist(
  */
 export function removeBackground(img: HTMLImageElement): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
-    const cacheKey = img.src;
+    const cacheKey = simpleHash(img.src);
     if (processedImageCache.has(cacheKey)) {
       resolve(processedImageCache.get(cacheKey)!);
       return;
@@ -349,6 +362,318 @@ export function removeBackground(img: HTMLImageElement): Promise<HTMLImageElemen
       };
       processedImg.onerror = reject;
       processedImg.src = croppedCanvas.toDataURL('image/png');
+    } catch (err) {
+      reject(err);
+    }
+  });
+}
+
+/**
+ * Removes background and returns a Blob (PNG). Uses canvas.toBlob which is more
+ * memory-efficient than toDataURL for large images.
+ */
+export function removeBackgroundToBlob(img: HTMLImageElement): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    const cacheKey = simpleHash(img.src);
+
+    // Check blob cache first
+    if (processedBlobCache.has(cacheKey)) {
+      // Convert cached blob URL back to blob
+      fetch(processedBlobCache.get(cacheKey)!)
+        .then(r => r.blob())
+        .then(resolve)
+        .catch(() => {
+          // If fetch fails, remove stale cache and re-process
+          processedBlobCache.delete(cacheKey);
+          processToBlob(img, cacheKey).then(resolve).catch(reject);
+        });
+      return;
+    }
+
+    processToBlob(img, cacheKey).then(resolve).catch(reject);
+  });
+}
+
+function processToBlob(img: HTMLImageElement, cacheKey: string): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    try {
+      const canvas = document.createElement('canvas');
+      const w = img.naturalWidth || img.width;
+      const h = img.naturalHeight || img.height;
+
+      // Limit processing size for performance (max 1024px on longest side)
+      const maxDim = 1024;
+      let processW = w;
+      let processH = h;
+      if (Math.max(w, h) > maxDim) {
+        const scale = maxDim / Math.max(w, h);
+        processW = Math.round(w * scale);
+        processH = Math.round(h * scale);
+      }
+
+      canvas.width = processW;
+      canvas.height = processH;
+
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      if (!ctx) {
+        reject(new Error('No canvas context'));
+        return;
+      }
+
+      // Scale down if needed
+      if (processW !== w || processH !== h) {
+        ctx.drawImage(img, 0, 0, processW, processH);
+      } else {
+        ctx.drawImage(img, 0, 0);
+      }
+
+      const imageData = ctx.getImageData(0, 0, processW, processH);
+      const data = imageData.data;
+
+      // ─── Step 0: Check if already transparent ───
+      if (hasTransparency(data, data.length)) {
+        canvas.toBlob((blob) => {
+          if (blob) {
+            const url = URL.createObjectURL(blob);
+            processedBlobCache.set(cacheKey, url);
+            resolve(blob);
+          } else {
+            reject(new Error('Failed to create blob'));
+          }
+        }, 'image/png');
+        return;
+      }
+
+      // ─── Step 1: Sample edge pixels to find background color ───
+      const edgeSamples: number[] = [];
+      const edgeSet = new Set<number>();
+
+      const sampleEdgePixels = (x: number, y: number) => {
+        const pos = (y * processW + x) * 4;
+        if (!edgeSet.has(pos)) {
+          edgeSet.add(pos);
+          edgeSamples.push(data[pos], data[pos + 1], data[pos + 2]);
+        }
+      };
+
+      const xStep = Math.max(1, Math.floor(processW / 200));
+      for (let x = 0; x < processW; x += xStep) {
+        for (let dy = 0; dy < 5; dy++) {
+          sampleEdgePixels(x, dy);
+          sampleEdgePixels(x, processH - 1 - dy);
+        }
+      }
+      const yStep = Math.max(1, Math.floor(processH / 200));
+      for (let y = 0; y < processH; y += yStep) {
+        for (let dx = 0; dx < 5; dx++) {
+          sampleEdgePixels(dx, y);
+          sampleEdgePixels(processW - 1 - dx, y);
+        }
+      }
+
+      const sampleCount = edgeSamples.length / 3;
+      const rs: number[] = [], gs: number[] = [], bs: number[] = [];
+      for (let i = 0; i < edgeSamples.length; i += 3) {
+        rs.push(edgeSamples[i]);
+        gs.push(edgeSamples[i + 1]);
+        bs.push(edgeSamples[i + 2]);
+      }
+      rs.sort((a, b) => a - b);
+      gs.sort((a, b) => a - b);
+      bs.sort((a, b) => a - b);
+
+      const mid = Math.floor(sampleCount / 2);
+      const bgR = rs[mid];
+      const bgG = gs[mid];
+      const bgB = bs[mid];
+
+      const variance = (() => {
+        let sum = 0;
+        const sStep = Math.max(1, Math.floor(sampleCount / 200));
+        let count = 0;
+        for (let i = 0; i < sampleCount; i += sStep) {
+          sum += colorDist(edgeSamples[i * 3], edgeSamples[i * 3 + 1], edgeSamples[i * 3 + 2], bgR, bgG, bgB);
+          count++;
+        }
+        return count > 0 ? sum / count : 0;
+      })();
+
+      const tolerance = Math.max(35, Math.min(80, 40 + variance * 1.0));
+
+      // ─── Step 2: Flood fill from edges ───
+      const state = new Uint8Array(processW * processH);
+      const isBackground = (i: number): boolean => {
+        return colorDist(data[i], data[i + 1], data[i + 2], bgR, bgG, bgB) < tolerance;
+      };
+
+      const queue: number[] = [];
+      for (let x = 0; x < processW; x++) {
+        const topPos = x;
+        const botPos = (processH - 1) * processW + x;
+        if (isBackground(topPos * 4) && state[topPos] === 0) { state[topPos] = 1; queue.push(topPos); }
+        if (isBackground(botPos * 4) && state[botPos] === 0) { state[botPos] = 1; queue.push(botPos); }
+      }
+      for (let y = 1; y < processH - 1; y++) {
+        const leftPos = y * processW;
+        const rightPos = y * processW + (processW - 1);
+        if (isBackground(leftPos * 4) && state[leftPos] === 0) { state[leftPos] = 1; queue.push(leftPos); }
+        if (isBackground(rightPos * 4) && state[rightPos] === 0) { state[rightPos] = 1; queue.push(rightPos); }
+      }
+
+      let head = 0;
+      while (head < queue.length) {
+        const pos = queue[head++];
+        const px = pos % processW;
+        const py = Math.floor(pos / processW);
+
+        const neighbors: number[] = [];
+        if (py > 0) neighbors.push(pos - processW);
+        if (py < processH - 1) neighbors.push(pos + processW);
+        if (px > 0) neighbors.push(pos - 1);
+        if (px < processW - 1) neighbors.push(pos + 1);
+        if (py > 0 && px > 0) neighbors.push(pos - processW - 1);
+        if (py > 0 && px < processW - 1) neighbors.push(pos - processW + 1);
+        if (py < processH - 1 && px > 0) neighbors.push(pos + processW - 1);
+        if (py < processH - 1 && px < processW - 1) neighbors.push(pos + processW + 1);
+
+        for (const nPos of neighbors) {
+          if (nPos >= 0 && state[nPos] === 0) {
+            if (isBackground(nPos * 4)) {
+              state[nPos] = 1;
+              queue.push(nPos);
+            }
+          }
+        }
+      }
+
+      for (let i = 0; i < state.length; i++) {
+        if (state[i] === 0) state[i] = 2;
+      }
+
+      // ─── Step 3: Apply alpha ───
+      for (let y = 0; y < processH; y++) {
+        for (let x = 0; x < processW; x++) {
+          const pos = y * processW + x;
+          const i = pos * 4;
+          if (state[pos] === 1) {
+            let minDist = 999;
+            const searchR = 5;
+            for (let dy = -searchR; dy <= searchR; dy++) {
+              for (let dx = -searchR; dx <= searchR; dx++) {
+                const nx = x + dx;
+                const ny = y + dy;
+                if (nx >= 0 && nx < processW && ny >= 0 && ny < processH) {
+                  if (state[ny * processW + nx] === 2) {
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    if (dist < minDist) minDist = dist;
+                  }
+                }
+              }
+            }
+            data[i + 3] = minDist < 3 ? Math.round(255 * (1 - minDist / 3)) : 0;
+          }
+        }
+      }
+
+      // ─── Step 4: Second pass cleanup ───
+      const tightTolerance = 25;
+      for (let y = 1; y < processH - 1; y++) {
+        for (let x = 1; x < processW - 1; x++) {
+          const pos = y * processW + x;
+          if (state[pos] !== 2) continue;
+          const i = pos * 4;
+          const dist = colorDist(data[i], data[i + 1], data[i + 2], bgR, bgG, bgB);
+          if (dist < tightTolerance) {
+            let bgNeighbors = 0;
+            for (let dy = -2; dy <= 2; dy++) {
+              for (let dx = -2; dx <= 2; dx++) {
+                if (dx === 0 && dy === 0) continue;
+                const nx = x + dx;
+                const ny = y + dy;
+                if (nx >= 0 && nx < processW && ny >= 0 && ny < processH) {
+                  if (state[ny * processW + nx] === 1) bgNeighbors++;
+                }
+              }
+            }
+            if (bgNeighbors >= 15) data[i + 3] = 0;
+          }
+        }
+      }
+
+      // ─── Step 5: Auto-crop ───
+      let minX = processW, maxX = 0, minY = processH, maxY = 0;
+      for (let y = 0; y < processH; y++) {
+        for (let x = 0; x < processW; x++) {
+          if (data[(y * processW + x) * 4 + 3] > 10) {
+            if (x < minX) minX = x;
+            if (x > maxX) maxX = x;
+            if (y < minY) minY = y;
+            if (y > maxY) maxY = y;
+          }
+        }
+      }
+
+      const padding = Math.round(Math.min(processW, processH) * 0.04);
+      minX = Math.max(0, minX - padding);
+      maxX = Math.min(processW - 1, maxX + padding);
+      minY = Math.max(0, minY - padding);
+      maxY = Math.min(processH - 1, maxY + padding);
+
+      const cropW = maxX - minX + 1;
+      const cropH = maxY - minY + 1;
+
+      if (cropW <= 0 || cropH <= 0) {
+        // If nothing found, return original as blob
+        canvas.toBlob((blob) => {
+          if (blob) resolve(blob);
+          else reject(new Error('Failed to create blob'));
+        }, 'image/png');
+        return;
+      }
+
+      const croppedCanvas = document.createElement('canvas');
+      croppedCanvas.width = cropW;
+      croppedCanvas.height = cropH;
+      const croppedCtx = croppedCanvas.getContext('2d')!;
+      croppedCtx.drawImage(canvas, minX, minY, cropW, cropH, 0, 0, cropW, cropH);
+
+      // ─── Step 6: Edge smoothing ───
+      const finalData = croppedCtx.getImageData(0, 0, cropW, cropH);
+      const fd = finalData.data;
+      const alphaSmooth = new Uint8Array(cropW * cropH);
+      for (let y = 1; y < cropH - 1; y++) {
+        for (let x = 1; x < cropW - 1; x++) {
+          let sum = 0, count = 0;
+          for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+              sum += fd[((y + dy) * cropW + (x + dx)) * 4 + 3];
+              count++;
+            }
+          }
+          alphaSmooth[y * cropW + x] = Math.round(sum / count);
+        }
+      }
+      for (let y = 1; y < cropH - 1; y++) {
+        for (let x = 1; x < cropW - 1; x++) {
+          const i = (y * cropW + x) * 4;
+          const orig = fd[i + 3];
+          if (orig > 10 && orig < 245) {
+            fd[i + 3] = alphaSmooth[y * cropW + x];
+          }
+        }
+      }
+      croppedCtx.putImageData(finalData, 0, 0);
+
+      // Convert to Blob (much more memory efficient than toDataURL)
+      croppedCanvas.toBlob((blob) => {
+        if (blob) {
+          const url = URL.createObjectURL(blob);
+          processedBlobCache.set(cacheKey, url);
+          resolve(blob);
+        } else {
+          reject(new Error('Failed to create blob from processed image'));
+        }
+      }, 'image/png');
     } catch (err) {
       reject(err);
     }

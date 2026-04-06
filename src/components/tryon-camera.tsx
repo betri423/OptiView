@@ -59,7 +59,7 @@ export default function TryOnCamera({
       },
     });
 
-  // Load glasses SVG overlay — SVGs are always transparent, no processing needed
+  // Load glasses overlay image — handles SVG data URLs, blob URLs, and http URLs
   useEffect(() => {
     const url = selectedGlasses?.overlayUrl || null;
     if (!url) {
@@ -70,16 +70,19 @@ export default function TryOnCamera({
     setImageLoading(true);
 
     const img = new Image();
-    // Only set crossOrigin for external URLs, NOT for data: or SVG data URLs
-    if (url.startsWith('http')) {
+    // Only set crossOrigin for external http(s) URLs
+    // NEVER set it for blob:, data:, or SVG data URLs (causes CORS failures)
+    if (url.startsWith('http://') || url.startsWith('https://')) {
       img.crossOrigin = "anonymous";
     }
     img.onload = () => {
+      console.log('[Camera] Glasses image loaded:', img.naturalWidth, 'x', img.naturalHeight);
       glassesImgRef.current = img;
       setImageLoading(false);
     };
-    img.onerror = () => {
-      console.warn("Failed to load glasses overlay:", url?.substring(0, 80));
+    img.onerror = (err) => {
+      console.warn("[Camera] Failed to load glasses overlay:", url?.substring(0, 100), err);
+      glassesImgRef.current = null;
       setImageLoading(false);
     };
     img.src = url;
