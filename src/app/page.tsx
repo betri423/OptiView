@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import TryOnCamera from "@/components/tryon-camera";
 import GlassesGallery from "@/components/glasses-gallery";
 import { Button } from "@/components/ui/button";
@@ -92,6 +92,21 @@ export default function Home() {
   const [activeSection, setActiveSection] = useState<"tryon" | "features">("tryon");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [showHero, setShowHero] = useState(true);
+
+  // Stable callbacks with refs — prevents stale closures in async child components
+  const addCustomRef = useRef<(g: GlassesModel) => void>();
+  const selectRef = useRef<(g: GlassesModel | null) => void>();
+  const deleteCustomRef = useRef<(id: string) => void>();
+
+  // Keep refs in sync with latest state setters
+  useEffect(() => {
+    addCustomRef.current = (g: GlassesModel) => setCustomGlasses((prev) => [g, ...prev]);
+    selectRef.current = setSelectedGlasses;
+    deleteCustomRef.current = (id: string) => {
+      setCustomGlasses((prev) => prev.filter((g) => g.id !== id));
+      setSelectedGlasses((cur) => (cur?.id === id ? null : cur));
+    };
+  });
 
   const handleStartTryOn = useCallback(() => {
     setShowHero(false);
@@ -483,13 +498,10 @@ export default function Home() {
               <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] overflow-hidden h-[600px] lg:h-[calc(100vh-7rem)]">
                 <GlassesGallery
                   selectedGlasses={selectedGlasses}
-                  onSelect={setSelectedGlasses}
+                  onSelect={selectRef}
                   customGlasses={customGlasses}
-                  onAddCustom={(g) => setCustomGlasses((prev) => [g, ...prev])}
-                  onDeleteCustom={(id) => {
-                    setCustomGlasses((prev) => prev.filter((g) => g.id !== id));
-                    if (selectedGlasses?.id === id) setSelectedGlasses(null);
-                  }}
+                  onAddCustom={addCustomRef}
+                  onDeleteCustom={deleteCustomRef}
                 />
               </div>
             </motion.div>

@@ -1,6 +1,28 @@
 # Worklog
 
 ---
+Task ID: 7
+Agent: Main Agent
+Task: Fix uploaded glasses disappearing — stale closure + crossOrigin issues
+
+Work Log:
+- **Root cause 1 (stale closures)**: Inline arrow functions `(g) => setCustomGlasses(...)` in page.tsx created NEW references on every render. The async `useCallback` in the gallery captured a stale reference. During `await removeBackground()`, React re-rendered but `onAddCustom` in the closure was the OLD version.
+- **Root cause 2 (crossOrigin)**: `img.crossOrigin = "anonymous"` was set for ALL images including data URLs and SVG data URLs. Some browsers fail to load data URLs with CORS headers set.
+- **Fix 1**: Changed page.tsx to pass `useRef` objects (always stable reference) instead of inline arrow functions. Used `useEffect` to keep ref `.current` values in sync with latest state setters.
+- **Fix 2**: Changed gallery props from `onAddCustom: (glasses: GlassesModel) => void` to `onAddCustom: MutableRefObject<...>`. All usages now call `.current()` which always invokes the latest callback.
+- **Fix 3**: In tryon-camera.tsx, only set `crossOrigin = "anonymous"` for `http://` URLs, not for `data:` URLs or SVG data URLs.
+- **Fix 4**: Captured `previewUrl` and `uploadName` as local variables at start of `handleUpload` to avoid stale state reads during async processing.
+- Removed `onAddCustom`/`onSelect` from `useCallback` deps (refs are stable, don't need to be deps).
+- Lint passes clean, app compiles and responds 200.
+
+Stage Summary:
+- Uploaded glasses now persist reliably — refs guarantee latest callbacks are always called
+- No more stale closure bugs during async image processing
+- Data URLs load correctly without CORS issues
+- Gallery shows custom glasses in "Mis Anteojos" section immediately after upload
+
+---
+
 Task ID: 6
 Agent: Main Agent
 Task: Fix uploaded glasses not persisting in gallery + improve background removal

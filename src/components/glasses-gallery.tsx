@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, type MutableRefObject } from "react";
 import { type GlassesModel, defaultGlasses, GLASSES_CATEGORIES } from "@/lib/glasses-data";
 import { removeBackground } from "@/lib/image-utils";
 import { Button } from "@/components/ui/button";
@@ -53,10 +53,10 @@ const categoryIcons: Record<string, React.ReactNode> = {
 
 interface GlassesGalleryProps {
   selectedGlasses: GlassesModel | null;
-  onSelect: (glasses: GlassesModel | null) => void;
+  onSelect: MutableRefObject<(glasses: GlassesModel | null) => void>;
   customGlasses: GlassesModel[];
-  onAddCustom: (glasses: GlassesModel) => void;
-  onDeleteCustom: (id: string) => void;
+  onAddCustom: MutableRefObject<(glasses: GlassesModel) => void>;
+  onDeleteCustom: MutableRefObject<(id: string) => void>;
 }
 
 export default function GlassesGallery({
@@ -133,6 +133,7 @@ export default function GlassesGallery({
     setIsDragOver(false);
   }, []);
 
+  // Upload handler — uses refs so it's NEVER stale, even during async processing
   const handleUpload = useCallback(async () => {
     if (!previewUrl) {
       toast.error("Selecciona una imagen primero");
@@ -142,13 +143,17 @@ export default function GlassesGallery({
     setIsProcessing(true);
     setProcessingStep(1);
 
+    // Capture current preview data
+    const currentPreview = previewUrl;
+    const currentName = uploadName;
+
     try {
       const img = new Image();
-      img.crossOrigin = "anonymous";
+      // Don't set crossOrigin for data URLs — it causes failures in some browsers
       await new Promise<void>((resolve, reject) => {
         img.onload = () => resolve();
-        img.onerror = reject;
-        img.src = previewUrl;
+        img.onerror = () => reject(new Error("Failed to load image"));
+        img.src = currentPreview;
       });
 
       // Remove background
@@ -167,7 +172,7 @@ export default function GlassesGallery({
       // Create the glasses model
       const newGlasses: GlassesModel = {
         id: `custom-${Date.now()}`,
-        name: uploadName || "Personalizado",
+        name: currentName || "Personalizado",
         brand: "CUSTOM",
         category: "custom",
         price: "Custom",
@@ -176,9 +181,9 @@ export default function GlassesGallery({
         overlayUrl: finalUrl,
       };
 
-      // Add to parent state and select it
-      onAddCustom(newGlasses);
-      onSelect(newGlasses);
+      // Use .current to always call the LATEST version of the callback
+      onAddCustom.current(newGlasses);
+      onSelect.current(newGlasses);
 
       // Reset form
       setPreviewUrl(null);
@@ -192,17 +197,17 @@ export default function GlassesGallery({
       // Fallback: use original image without background removal
       const newGlasses: GlassesModel = {
         id: `custom-${Date.now()}`,
-        name: uploadName || "Personalizado",
+        name: currentName || "Personalizado",
         brand: "CUSTOM",
         category: "custom",
         price: "Custom",
         color: "#888",
-        imageUrl: previewUrl,
-        overlayUrl: previewUrl,
+        imageUrl: currentPreview,
+        overlayUrl: currentPreview,
       };
 
-      onAddCustom(newGlasses);
-      onSelect(newGlasses);
+      onAddCustom.current(newGlasses);
+      onSelect.current(newGlasses);
       setPreviewUrl(null);
       setUploadName("");
       setUploadOpen(false);
@@ -213,7 +218,7 @@ export default function GlassesGallery({
       setIsProcessing(false);
       setProcessingStep(0);
     }
-  }, [previewUrl, uploadName, onAddCustom, onSelect]);
+  }, [previewUrl, uploadName]); // ← Only local state deps, refs are stable
 
   // Render a single glasses card
   const renderGlassesCard = (glasses: GlassesModel) => (
@@ -228,9 +233,9 @@ export default function GlassesGallery({
       <button
         onClick={() => {
           if (selectedGlasses?.id === glasses.id) {
-            onSelect(null);
+            onSelect.current(null);
           } else {
-            onSelect(glasses);
+            onSelect.current(glasses);
           }
         }}
         className={`relative w-full aspect-[4/3] rounded-xl overflow-hidden transition-all duration-300 group border-2 ${
@@ -257,7 +262,7 @@ export default function GlassesGallery({
           <button
             onClick={(e) => {
               e.stopPropagation();
-              onDeleteCustom(glasses.id);
+              onDeleteCustom.current(glasses.id);
               toast.success("Anteojos eliminados");
             }}
             className="absolute top-1.5 left-1.5 w-5 h-5 rounded-full bg-red-500/80 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"

@@ -70,12 +70,16 @@ export default function TryOnCamera({
     setImageLoading(true);
 
     const img = new Image();
-    img.crossOrigin = "anonymous";
+    // Only set crossOrigin for external URLs, NOT for data: or SVG data URLs
+    if (url.startsWith('http')) {
+      img.crossOrigin = "anonymous";
+    }
     img.onload = () => {
       glassesImgRef.current = img;
       setImageLoading(false);
     };
     img.onerror = () => {
+      console.warn("Failed to load glasses overlay:", url?.substring(0, 80));
       setImageLoading(false);
     };
     img.src = url;
