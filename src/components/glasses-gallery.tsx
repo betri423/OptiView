@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { type GlassesModel, defaultGlasses, GLASSES_CATEGORIES } from "@/lib/glasses-data";
+import { removeBackground } from "@/lib/image-utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -30,6 +31,10 @@ import {
   Minimize2,
   Maximize2,
   LayoutGrid,
+  Loader2,
+  Wand2,
+  AlertCircle,
+  CheckCircle2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { motion, AnimatePresence } from "framer-motion";
@@ -64,6 +69,9 @@ export default function GlassesGallery({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [uploadName, setUploadName] = useState("");
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const [processingStep, setProcessingStep] = useState(0);
 
   const allGlasses = [...defaultGlasses, ...customGlasses];
 
@@ -72,53 +80,122 @@ export default function GlassesGallery({
       ? allGlasses
       : allGlasses.filter((g) => g.category === activeCategory);
 
+  const processImageFile = useCallback((file: File) => {
+    if (!file.type.startsWith("image/")) {
+      toast.error("Por favor selecciona una imagen válida");
+      return;
+    }
+
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error("La imagen no debe superar 10MB");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const url = ev.target?.result as string;
+      setPreviewUrl(url);
+    };
+    reader.readAsDataURL(file);
+  }, []);
+
   const handleFileSelect = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (!file) return;
-
-      if (!file.type.startsWith("image/")) {
-        toast.error("Por favor selecciona una imagen válida");
-        return;
-      }
-
-      if (file.size > 5 * 1024 * 1024) {
-        toast.error("La imagen no debe superar 5MB");
-        return;
-      }
-
-      const reader = new FileReader();
-      reader.onload = (ev) => {
-        const url = ev.target?.result as string;
-        setPreviewUrl(url);
-      };
-      reader.readAsDataURL(file);
+      processImageFile(file);
     },
-    []
+    [processImageFile]
   );
 
-  const handleUpload = useCallback(() => {
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setIsDragOver(false);
+      const file = e.dataTransfer.files?.[0];
+      if (file) processImageFile(file);
+    },
+    [processImageFile]
+  );
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+  }, []);
+
+  const handleUpload = useCallback(async () => {
     if (!previewUrl) {
       toast.error("Selecciona una imagen primero");
       return;
     }
 
-    const newGlasses: GlassesModel = {
-      id: `custom-${Date.now()}`,
-      name: uploadName || "Personalizado",
-      brand: "CUSTOM",
-      category: "custom",
-      price: "Custom",
-      color: "#888",
-      imageUrl: previewUrl,
-      overlayUrl: previewUrl,
-    };
+    setIsProcessing(true);
+    setProcessingStep(1);
 
-    setCustomGlasses((prev) => [...prev, newGlasses]);
-    setPreviewUrl(null);
-    setUploadName("");
-    setUploadOpen(false);
-    toast.success("Anteojos personalizados agregados");
+    try {
+      // Step 1: Load the image
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      await new Promise<void>((resolve, reject) => {
+        img.onload = () => resolve();
+        img.onerror = reject;
+        img.src = previewUrl;
+      });
+
+      // Step 2: Remove background automatically
+      setProcessingStep(2);
+      const processedImg = await removeBackground(img);
+
+      // Step 3: Create the glasses model with processed image
+      setProcessingStep(3);
+      const processedUrl = processedImg.src;
+
+      const newGlasses: GlassesModel = {
+        id: `custom-${Date.now()}`,
+        name: uploadName || "Personalizado",
+        brand: "CUSTOM",
+        category: "custom",
+        price: "Custom",
+        color: "#888",
+        imageUrl: processedUrl,
+        overlayUrl: processedUrl,
+      };
+
+      setCustomGlasses((prev) => [...prev, newGlasses]);
+      setPreviewUrl(null);
+      setUploadName("");
+      setUploadOpen(false);
+      toast.success("Anteojos personalizados agregados con fondo eliminado");
+    } catch (err) {
+      console.error("Error processing image:", err);
+      // Fallback: use original image without processing
+      const newGlasses: GlassesModel = {
+        id: `custom-${Date.now()}`,
+        name: uploadName || "Personalizado",
+        brand: "CUSTOM",
+        category: "custom",
+        price: "Custom",
+        color: "#888",
+        imageUrl: previewUrl,
+        overlayUrl: previewUrl,
+      };
+      setCustomGlasses((prev) => [...prev, newGlasses]);
+      setPreviewUrl(null);
+      setUploadName("");
+      setUploadOpen(false);
+      toast.success("Anteojos personalizados agregados");
+    } finally {
+      setIsProcessing(false);
+      setProcessingStep(0);
+    }
   }, [previewUrl, uploadName]);
 
   const handleDeleteCustom = useCallback(
@@ -259,7 +336,7 @@ export default function GlassesGallery({
               <span className="text-xs text-white/30 group-hover:text-white/50 transition-colors">
                 Subir anteojos
               </span>
-              <span className="text-[10px] text-white/20">PNG transparente</span>
+              <span className="text-[10px] text-white/20">PNG, JPG o cualquier imagen</span>
             </button>
           </DialogTrigger>
           <DialogContent className="bg-gray-900 border-white/10 text-white sm:max-w-md">
@@ -269,7 +346,7 @@ export default function GlassesGallery({
                 Subir Anteojos Personalizados
               </DialogTitle>
               <DialogDescription className="text-white/50">
-                Sube una imagen PNG con fondo transparente de tus anteojos
+                Sube una imagen de tus anteojos. El fondo se eliminará automáticamente con IA.
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4 mt-4">
@@ -283,48 +360,111 @@ export default function GlassesGallery({
                 />
               </div>
               <div>
-                <Label className="text-white/70 text-sm">Imagen (PNG con fondo transparente)</Label>
+                <Label className="text-white/70 text-sm flex items-center gap-2">
+                  <Wand2 className="w-3.5 h-3.5 text-amber-400" />
+                  Imagen de anteojos
+                  <span className="text-white/30 font-normal">(cualquier formato)</span>
+                </Label>
                 <div
-                  onClick={() => fileInputRef.current?.click()}
-                  className="mt-1.5 border-2 border-dashed border-white/10 hover:border-amber-500/30 rounded-xl p-8 flex flex-col items-center justify-center cursor-pointer transition-all hover:bg-white/[0.03]"
+                  onClick={() => !isProcessing && fileInputRef.current?.click()}
+                  onDrop={handleDrop}
+                  onDragOver={handleDragOver}
+                  onDragLeave={handleDragLeave}
+                  className={`mt-1.5 border-2 border-dashed rounded-xl p-8 flex flex-col items-center justify-center cursor-pointer transition-all duration-300 ${
+                    isDragOver
+                      ? "border-amber-400 bg-amber-500/10"
+                      : previewUrl
+                      ? "border-emerald-500/30 bg-emerald-500/5"
+                      : "border-white/10 hover:border-amber-500/30 hover:bg-white/[0.03]"
+                  }`}
                 >
-                  {previewUrl ? (
-                    <div className="relative">
-                      <img
-                        src={previewUrl}
-                        alt="Preview"
-                        className="max-h-32 object-contain"
-                      />
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setPreviewUrl(null);
-                        }}
-                        className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-red-500 flex items-center justify-center"
-                      >
-                        <X className="w-3 h-3 text-white" />
-                      </button>
+                  {previewUrl && !isProcessing ? (
+                    <div className="relative flex flex-col items-center gap-3">
+                      <div className="relative">
+                        <img
+                          src={previewUrl}
+                          alt="Preview"
+                          className="max-h-36 object-contain rounded-lg"
+                        />
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setPreviewUrl(null);
+                          }}
+                          className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-red-500 flex items-center justify-center hover:bg-red-400 transition-colors"
+                        >
+                          <X className="w-3 h-3 text-white" />
+                        </button>
+                      </div>
+                      <div className="flex items-center gap-1.5 text-emerald-400">
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        <span className="text-xs font-medium">Imagen lista — el fondo se eliminará al agregar</span>
+                      </div>
+                    </div>
+                  ) : isProcessing ? (
+                    <div className="flex flex-col items-center gap-3 py-4">
+                      <div className="relative">
+                        <Loader2 className="w-10 h-10 text-amber-400 animate-spin" />
+                        <div className="absolute inset-0 w-10 h-10 rounded-full bg-amber-400/10 animate-ping" style={{ animationDuration: "2s" }} />
+                      </div>
+                      <div className="text-center">
+                        <p className="text-sm text-white/70 font-medium">
+                          {processingStep === 1 && "Cargando imagen..."}
+                          {processingStep === 2 && "Eliminando fondo con IA..."}
+                          {processingStep === 3 && "Finalizando..."}
+                        </p>
+                        <p className="text-xs text-white/30 mt-1">Procesando automáticamente</p>
+                      </div>
                     </div>
                   ) : (
                     <>
-                      <ImageIcon className="w-10 h-10 text-white/20 mb-2" />
-                      <p className="text-sm text-white/40">
-                        Haz clic para seleccionar
+                      <div className="w-14 h-14 rounded-2xl bg-white/5 flex items-center justify-center mb-2">
+                        <ImageIcon className="w-7 h-7 text-white/20" />
+                      </div>
+                      <p className="text-sm text-white/40 font-medium">
+                        Arrastra tu imagen aquí
                       </p>
-                      <p className="text-xs text-white/20 mt-1">
-                        Máximo 5MB
+                      <p className="text-xs text-white/25 mt-1">
+                        o haz clic para seleccionar archivo
                       </p>
+                      <div className="flex items-center gap-2 mt-3">
+                        {["PNG", "JPG", "WEBP", "SVG"].map((fmt) => (
+                          <span
+                            key={fmt}
+                            className="px-2 py-0.5 rounded bg-white/5 text-[10px] text-white/30 font-mono"
+                          >
+                            {fmt}
+                          </span>
+                        ))}
+                      </div>
                     </>
                   )}
                 </div>
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept="image/png,image/webp,image/svg+xml"
+                  accept="image/*"
                   onChange={handleFileSelect}
                   className="hidden"
                 />
               </div>
+
+              {/* Tips */}
+              <div className="rounded-lg bg-amber-500/5 border border-amber-500/10 p-3">
+                <div className="flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" />
+                  <div className="text-[11px] text-white/40 leading-relaxed">
+                    <p className="text-white/60 font-medium mb-1">Consejos para mejor resultado:</p>
+                    <ul className="space-y-0.5 list-disc list-inside">
+                      <li>Fondo blanco o claro funciona mejor</li>
+                      <li>Vista frontal de los anteojos, sin patillas visibles</li>
+                      <li>Los anteojos deben ser el único objeto en la imagen</li>
+                      <li>El fondo se elimina automáticamente</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+
               <div className="flex gap-3">
                 <Button
                   variant="outline"
@@ -333,16 +473,24 @@ export default function GlassesGallery({
                     setPreviewUrl(null);
                     setUploadName("");
                   }}
+                  disabled={isProcessing}
                   className="flex-1 border-white/10 text-white/60 hover:bg-white/5"
                 >
                   Cancelar
                 </Button>
                 <Button
                   onClick={handleUpload}
-                  disabled={!previewUrl}
+                  disabled={!previewUrl || isProcessing}
                   className="flex-1 bg-amber-500 hover:bg-amber-600 text-black font-semibold disabled:opacity-30"
                 >
-                  Agregar
+                  {isProcessing ? (
+                    <span className="flex items-center gap-2">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Procesando...
+                    </span>
+                  ) : (
+                    "Agregar anteojos"
+                  )}
                 </Button>
               </div>
             </div>
