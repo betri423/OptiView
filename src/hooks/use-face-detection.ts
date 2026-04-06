@@ -250,32 +250,42 @@ export function drawGlassesOnCanvas(
 ) {
   if (!face || !glassesImage) return;
 
-  const faceData = face as FaceData & {
-    eyeDistance: number;
-    leftEyeOuter: FaceLandmark;
-    rightEyeOuter: FaceLandmark;
-    noseBridge: FaceLandmark;
-    glabella: FaceLandmark;
-  };
+  const faceData = face;
 
   // Calculate glasses dimensions based on eye distance
   const eyeDistance = faceData.eyeDistance;
   const glassesWidth = eyeDistance * 2.4 * scaleX;
   const glassesHeight = glassesWidth * 0.45 * scaleY;
 
-  // Calculate position - center on the midpoint between eyes, slightly above
+  // Calculate position
   const centerX = faceData.centerX * canvasWidth;
   const centerY = faceData.centerY * canvasHeight - glassesHeight * 0.05;
   const rotation = faceData.rotation;
 
-  // Slight vertical offset based on nose bridge position
-  const noseOffset = faceData.noseBridge.y * canvasHeight;
+  // 3D tilt from z-coordinates
+  const leftZ = faceData.leftEyeOuter.z || 0;
+  const rightZ = faceData.rightEyeOuter.z || 0;
+  const tiltZ = (leftZ + rightZ) / 2;
+  const perspectiveSkew = tiltZ * 0.5; // Subtle perspective
 
   ctx.save();
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+
+  // Move to center position
   ctx.translate(centerX, centerY);
   ctx.rotate(rotation);
 
-  // Draw the glasses image
+  // Apply subtle perspective transform for 3D effect
+  ctx.transform(1, 0, perspectiveSkew, 1, 0, 0);
+
+  // Shadow
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.35)';
+  ctx.shadowBlur = 10;
+  ctx.shadowOffsetX = 2;
+  ctx.shadowOffsetY = 4;
+
+  // Draw glasses
   ctx.drawImage(
     glassesImage,
     -glassesWidth / 2,
@@ -283,6 +293,41 @@ export function drawGlassesOnCanvas(
     glassesWidth,
     glassesHeight
   );
+
+  // Remove shadow for lens reflections
+  ctx.shadowColor = 'transparent';
+  ctx.shadowBlur = 0;
+  ctx.shadowOffsetX = 0;
+  ctx.shadowOffsetY = 0;
+
+  // Add lens reflection effect
+  const lensWidth = glassesWidth * 0.38;
+  const lensHeight = glassesHeight * 0.65;
+  const lensY = -glassesHeight * 0.08;
+
+  // Left lens reflection
+  const leftGrad = ctx.createLinearGradient(
+    -glassesWidth * 0.27, lensY,
+    -glassesWidth * 0.27, lensY + lensHeight * 0.5
+  );
+  leftGrad.addColorStop(0, 'rgba(255, 255, 255, 0.08)');
+  leftGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+  ctx.fillStyle = leftGrad;
+  ctx.beginPath();
+  ctx.ellipse(-glassesWidth * 0.27, lensY + lensHeight * 0.2, lensWidth * 0.35, lensHeight * 0.3, -0.2, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Right lens reflection
+  const rightGrad = ctx.createLinearGradient(
+    glassesWidth * 0.27, lensY,
+    glassesWidth * 0.27, lensY + lensHeight * 0.5
+  );
+  rightGrad.addColorStop(0, 'rgba(255, 255, 255, 0.08)');
+  rightGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+  ctx.fillStyle = rightGrad;
+  ctx.beginPath();
+  ctx.ellipse(glassesWidth * 0.27, lensY + lensHeight * 0.2, lensWidth * 0.35, lensHeight * 0.3, -0.2, 0, Math.PI * 2);
+  ctx.fill();
 
   ctx.restore();
 }

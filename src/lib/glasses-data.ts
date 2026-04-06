@@ -309,7 +309,7 @@ const retroBlue = createSvgDataUrl(`<svg viewBox="0 0 240 100" xmlns="http://www
     </linearGradient>
   </defs>
   <rect x="10" y="20" width="105" height="58" rx="12" fill="none" stroke="url(#blue-frame)" stroke-width="6" stroke-linejoin="round"/>
-  <rect x="16,25" y="26" width="93" height="46" rx="8" fill="url(#retro-lens)"/>
+  <rect x="16" y="26" width="93" height="46" rx="8" fill="url(#retro-lens)"/>
   <rect x="125" y="20" width="105" height="58" rx="12" fill="none" stroke="url(#blue-frame)" stroke-width="6" stroke-linejoin="round"/>
   <rect x="131" y="26" width="93" height="46" rx="8" fill="url(#retro-lens)"/>
   <path d="M115,38 Q120,32 125,38" fill="none" stroke="url(#blue-frame)" stroke-width="6" stroke-linecap="round"/>
