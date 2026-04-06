@@ -49,7 +49,7 @@ export default function TryOnCamera({
   const { isLoading: modelLoading, isReady: modelReady, loadModel, error: modelError } =
     useFaceDetection({
       videoRef,
-      enabled: cameraActive && modelReady,
+      enabled: cameraActive,
       onFaceDetected: (face) => {
         faceRef.current = face;
         setFaceDetected(true);
