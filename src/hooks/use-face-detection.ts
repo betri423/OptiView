@@ -252,9 +252,9 @@ export function drawGlassesOnCanvas(
 
   const faceData = face;
 
-  // Calculate glasses dimensions based on eye distance
-  const eyeDistance = faceData.eyeDistance;
-  const glassesWidth = eyeDistance * 2.4 * scaleX;
+  // Calculate glasses dimensions based on eye distance (normalized → pixels)
+  const eyeDistancePx = faceData.eyeDistance * canvasWidth;
+  const glassesWidth = eyeDistancePx * 2.4 * scaleX;
   const glassesHeight = glassesWidth * 0.45 * scaleY;
 
   // Calculate position
