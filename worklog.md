@@ -241,3 +241,31 @@ Stage Summary:
 - `handleDeleteCustom` uses `setCustomGlasses(prev => prev.filter(...))` 
 - Lint passes cleanly
 - Page compiles and serves correctly (HTTP 200)
+
+---
+Task ID: 4
+Agent: Main Agent
+Task: Implement PWA (Progressive Web App) — installable as native app on phones
+
+Work Log:
+- Created PWA icons as SVG files in public/icons/ (192x192 and 512x512) with OptiView branding (gradient amber/orange with eye/glasses design)
+- Created public/manifest.json with full PWA configuration: name, display standalone, theme color, icons, categories
+- Updated src/app/layout.tsx: added Viewport export (theme-color, color-scheme), manifest link, apple-touch-icon, apple-mobile-web-app-capable meta tags
+- Created public/sw.js service worker with three-tier caching strategy:
+  - Network-first for navigation requests (HTML pages)
+  - Cache-first for static assets (images, icons, fonts)
+  - Stale-while-revalidate for JS/CSS (_next/ assets)
+- Created src/hooks/use-service-worker.ts: registers SW on mount, checks for updates hourly
+- Created src/components/pwa-install.tsx with two exports:
+  - usePWAInstall() hook: detects install capability, handles beforeinstallprompt event, supports iOS fallback
+  - PWAInstallBanner: animated floating banner with install button (Android) or iOS instructions
+- Created src/components/pwa-layout.tsx: wraps children with SW registration and install banner
+- Integrated PWALayout in layout.tsx wrapping all page content
+- Fixed React 19 lint error (react-hooks/set-state-in-effect) by using useMemo for computed values instead of useState+useEffect
+
+Stage Summary:
+- PWA is now installable: manifest, icons, service worker all configured
+- Install banner appears automatically on supported browsers (Chrome, Edge, Samsung Internet)
+- iOS users see instructions to "Add to Home Screen" via share menu
+- Service worker caches assets for offline use
+- Lint passes cleanly, page loads with HTTP 200

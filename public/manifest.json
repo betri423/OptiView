@@ -1,0 +1,41 @@
+{
+  "name": "OptiView — Probador Virtual de Anteojos",
+  "short_name": "OptiView",
+  "description": "Probador virtual de anteojos con inteligencia artificial. Pruébate cualquier modelo en tiempo real con tu cámara.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#030712",
+  "theme_color": "#f59e0b",
+  "orientation": "any",
+  "scope": "/",
+  "lang": "es",
+  "categories": ["lifestyle", "shopping", "utilities"],
+  "icons": [
+    {
+      "src": "/icons/icon-192x192.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512x512.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-192x192.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icons/icon-512x512.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ],
+  "screenshots": [],
+  "prefer_related_applications": false
+}

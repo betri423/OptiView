@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 192 192">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#f59e0b;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#ea580c;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  <rect width="192" height="192" rx="40" fill="url(#bg)"/>
+  <!-- Eye shape -->
+  <path d="M96 60C68 60 44 80 36 96c8 16 32 36 60 36s52-20 60-36c-8-16-32-36-60-36z" fill="none" stroke="white" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="96" cy="96" r="18" fill="none" stroke="white" stroke-width="5"/>
+  <circle cx="96" cy="96" r="6" fill="white"/>
+  <!-- Glasses bridge hint -->
+  <path d="M64 96c0-4 4-8 8-8" fill="none" stroke="white" stroke-width="4" stroke-linecap="round"/>
+  <path d="M128 96c0-4-4-8-8-8" fill="none" stroke="white" stroke-width="4" stroke-linecap="round"/>
+</svg>
