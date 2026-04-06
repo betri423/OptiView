@@ -7,7 +7,6 @@ import {
   type FaceData,
 } from "@/hooks/use-face-detection";
 import type { GlassesModel } from "@/lib/glasses-data";
-import { loadTransparentImage } from "@/lib/image-utils";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import {
@@ -62,7 +61,7 @@ export default function TryOnCamera({
       },
     });
 
-  // Load glasses image when selection changes — with background removal
+  // Load glasses SVG overlay — SVGs are always transparent, no processing needed
   useEffect(() => {
     const url = customGlassesUrl || selectedGlasses?.overlayUrl || null;
     if (!url) {
@@ -72,27 +71,16 @@ export default function TryOnCamera({
 
     setImageLoading(true);
 
-    if (customGlassesUrl) {
-      // Custom uploads — load directly (user provides transparent images)
-      const img = new Image();
-      img.crossOrigin = "anonymous";
-      img.onload = () => {
-        glassesImgRef.current = img;
-        setImageLoading(false);
-      };
-      img.onerror = () => {
-        setImageLoading(false);
-      };
-      img.src = url;
-    } else {
-      // AI-generated glasses — remove white background for transparency
-      loadTransparentImage(url).then((processed) => {
-        if (processed) {
-          glassesImgRef.current = processed;
-        }
-        setImageLoading(false);
-      });
-    }
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      glassesImgRef.current = img;
+      setImageLoading(false);
+    };
+    img.onerror = () => {
+      setImageLoading(false);
+    };
+    img.src = url;
   }, [selectedGlasses, customGlassesUrl]);
 
   // Render loop for drawing glasses overlay

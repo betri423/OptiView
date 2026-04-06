@@ -1,34 +1,49 @@
 # Worklog
 
 ---
-Task ID: 4
+Task ID: 5
 Agent: Main Agent
-Task: Fix glasses images - regenerate with correct prompts and improve background removal
+Task: Complete rewrite — SVG overlays with AI gallery photos
 
 Work Log:
-- User reported glasses looked bad: had visible folded arms/legs, white background covering face
-- Regenerated ALL 12 glasses images with corrected prompts:
-  - "Front view only" — no ear arms, no temples visible
-  - "Just the front piece" — as if being worn on face
-  - "Clean pure white background, product cutout style" — easier removal
-  - 1024x1024 square format for consistent processing
-- Completely rewrote `src/lib/image-utils.ts` background removal:
-  - Uses BFS flood-fill from ALL image edges to detect background
-  - Marks connected bright+low-saturation pixels from borders as background
-  - Applies smooth alpha fade (4px) at content/background transitions
-  - Auto-crops to content bounding box with 3% padding
-  - Final edge smoothing pass for anti-aliased borders
-  - Caching for performance
-- All 12 models regenerated: wayfarer-black, wayfarer-tortoise, aviator-gold,
-  aviator-silver, round-gold, cateye-black, cateye-red, sport-black,
-  clubmaster-black, oversized-black, clear-frame, oversized-clear
+- User rejected AI-generated images entirely: folded arms, bad background, looks terrible
+- Changed approach completely:
+  - **Gallery**: AI-generated photos (beautiful product photography for browsing)
+  - **Overlay on face**: Detailed SVGs (always transparent, always work, no processing)
+- Created 12 ultra-detailed SVG glasses models with 3D render quality:
+  - Wayfarer Negro: matte black with bevels, inner shadows, gradient frame
+  - Wayfarer Tortuga: havana tortoise with warm brown multi-stop gradients
+  - Aviador Dorado: gold metallic with double bridge, teardrop lenses
+  - Aviador Plateado: chrome silver with blue-tinted lenses
+  - Round Dorado: gold wire frame with dark tinted lenses
+  - Cat Eye Negro: glossy black with upswept edges
+  - Cat Eye Rojo: deep red with dark lenses
+  - Sport Shield: one-piece wrap with mirror reflections
+  - Clubmaster: black brow bar + gold wire bottom rim
+  - Oversized Glam: large black frames
+  - Transparente: crystal clear acetate with subtle edge shine
+  - Oversized Crystal: transparent with rose tint
+- Each SVG features:
+  - Multi-stop gradients simulating real materials (5+ color stops)
+  - Frame bevels and top highlights
+  - Lens reflections (arc highlights, bottom catch lights)
+  - Drop shadows beneath frames for depth
+  - Nose pads with proper styling
+  - Bridge connectors
+  - NO background, NO arms/temples, NO folded parts
+- Updated tryon-camera.tsx: removed all background removal processing
+  - SVGs load directly, zero processing, instant display
+- Updated glasses-data.ts: dual image system
+  - `imageUrl` = AI photo for gallery
+  - `overlayUrl` = SVG data URL for face rendering
 
 Stage Summary:
-- Glasses images now show ONLY the front frame (no arms/legs)
-- Flood-fill background removal properly handles non-uniform backgrounds
-- Smooth alpha transitions at edges prevent hard cutout look
-- Auto-crop eliminates excess whitespace around glasses
-- 12 photorealistic models ready for try-on
+- Gallery shows professional AI product photos
+- Face overlay uses clean, detailed SVGs that always work
+- Zero background issues (SVGs are inherently transparent)
+- Zero loading delay (no image processing)
+- Zero arm/temple issues (SVGs designed for front-view only)
+- 12 models across 7 categories
 
 ---
 
