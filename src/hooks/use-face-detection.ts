@@ -253,9 +253,10 @@ export function drawGlassesOnCanvas(
   const faceData = face;
 
   // Calculate glasses dimensions based on eye distance (normalized → pixels)
+  // Multiplier 1.5: SVG models already include temple arm padding
   const eyeDistancePx = faceData.eyeDistance * canvasWidth;
-  const glassesWidth = eyeDistancePx * 2.4 * scaleX;
-  const glassesHeight = glassesWidth * 0.45 * scaleY;
+  const glassesWidth = eyeDistancePx * 1.5 * scaleX;
+  const glassesHeight = glassesWidth * 0.42 * scaleY;
 
   // Calculate position
   const centerX = faceData.centerX * canvasWidth;
