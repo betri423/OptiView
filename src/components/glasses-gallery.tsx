@@ -326,18 +326,41 @@ export default function GlassesGallery({
           </AnimatePresence>
         </div>
 
-        {/* Upload area */}
+        {/* Custom active indicator */}
+        {customGlassesUrl && (
+          <div className="mt-3 p-3 rounded-xl bg-amber-500/10 border border-amber-500/20">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-6 rounded bg-white/10 flex items-center justify-center overflow-hidden">
+                  <img
+                    src={customGlassesUrl}
+                    alt="Custom"
+                    className="w-full h-full object-contain"
+                  />
+                </div>
+                <span className="text-xs text-amber-300 font-medium">
+                  Anteojos personalizados
+                </span>
+              </div>
+              <button
+                onClick={handleRemoveCustomActive}
+                className="text-amber-400/60 hover:text-amber-400 transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        )}
+      </ScrollArea>
+
+      {/* ═══ PROMINENT UPLOAD BUTTON — Fixed at bottom ═══ */}
+      <div className="px-4 pb-4 pt-2 border-t border-white/[0.06] bg-gradient-to-t from-gray-950 via-gray-950 to-transparent">
         <Dialog open={uploadOpen} onOpenChange={setUploadOpen}>
           <DialogTrigger asChild>
-            <button className="w-full aspect-[4/3] rounded-xl overflow-hidden border-2 border-dashed border-white/10 hover:border-amber-500/30 bg-white/[0.02] hover:bg-white/[0.04] transition-all duration-300 flex flex-col items-center justify-center gap-2 group mt-1">
-              <div className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center group-hover:bg-amber-500/10 transition-colors">
-                <Upload className="w-5 h-5 text-white/30 group-hover:text-amber-400 transition-colors" />
-              </div>
-              <span className="text-xs text-white/30 group-hover:text-white/50 transition-colors">
-                Subir anteojos
-              </span>
-              <span className="text-[10px] text-white/20">PNG, JPG o cualquier imagen</span>
-            </button>
+            <Button className="w-full h-12 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-black font-bold rounded-xl shadow-lg shadow-amber-500/20 transition-all duration-300 hover:shadow-amber-500/40 hover:scale-[1.02] active:scale-[0.98] text-sm">
+              <Upload className="w-5 h-5 mr-2.5" />
+              Subir mis anteojos
+            </Button>
           </DialogTrigger>
           <DialogContent className="bg-gray-900 border-white/10 text-white sm:max-w-md">
             <DialogHeader>
@@ -346,7 +369,7 @@ export default function GlassesGallery({
                 Subir Anteojos Personalizados
               </DialogTitle>
               <DialogDescription className="text-white/50">
-                Sube una imagen de tus anteojos. El fondo se eliminará automáticamente con IA.
+                Sube una imagen de tus anteojos. El fondo se eliminará automáticamente.
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4 mt-4">
@@ -457,9 +480,8 @@ export default function GlassesGallery({
                     <p className="text-white/60 font-medium mb-1">Consejos para mejor resultado:</p>
                     <ul className="space-y-0.5 list-disc list-inside">
                       <li>Fondo blanco o claro funciona mejor</li>
-                      <li>Vista frontal de los anteojos, sin patillas visibles</li>
-                      <li>Los anteojos deben ser el único objeto en la imagen</li>
-                      <li>El fondo se elimina automáticamente</li>
+                      <li>Vista frontal, sin patillas visibles</li>
+                      <li>Los anteojos deben ser el único objeto</li>
                     </ul>
                   </div>
                 </div>
@@ -496,33 +518,7 @@ export default function GlassesGallery({
             </div>
           </DialogContent>
         </Dialog>
-
-        {/* Custom active indicator */}
-        {customGlassesUrl && (
-          <div className="mt-3 p-3 rounded-xl bg-amber-500/10 border border-amber-500/20">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-6 rounded bg-white/10 flex items-center justify-center overflow-hidden">
-                  <img
-                    src={customGlassesUrl}
-                    alt="Custom"
-                    className="w-full h-full object-contain"
-                  />
-                </div>
-                <span className="text-xs text-amber-300 font-medium">
-                  Anteojos personalizados
-                </span>
-              </div>
-              <button
-                onClick={handleRemoveCustomActive}
-                className="text-amber-400/60 hover:text-amber-400 transition-colors"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-        )}
-      </ScrollArea>
+      </div>
     </div>
   );
 }
