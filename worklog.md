@@ -198,3 +198,23 @@ Stage Summary:
 - Key fix: Simplified callback pattern removes stale closure risk
 - Key fix: Better video readyState checking prevents MediaPipe errors
 - All lint checks pass, server compiles successfully
+---
+Task ID: 2
+Agent: Main Developer
+Task: Fix uploaded glasses persistence (4th attempt - fundamental rewrite)
+
+Work Log:
+- Identified 3 root causes: (1) framer-motion AnimatePresence + layout prop causing items to flash/disappear, (2) auto-select after upload triggering cascading re-renders, (3) React state not being reliable for persistence
+- Rewrote page.tsx: ref-backed custom glasses store using useRef as source of truth, version counter for re-renders, useMemo to derive array
+- Rewrote glasses-gallery.tsx: removed ALL framer-motion (AnimatePresence, motion.div, layout prop) from glasses cards - pure CSS transitions only
+- Changed upload flow: no longer auto-selects glasses after upload, just adds to gallery. User clicks to select.
+- Removed category auto-change after upload (was causing "cambia la coleccion" issue)
+- Changed button text from "Agregar anteojos" to "Guardar en galería" to clarify the action
+- Removed unnecessary import of framer-motion from gallery component
+- All lint checks pass, server compiles successfully
+
+Stage Summary:
+- 2 files completely rewritten: page.tsx, glasses-gallery.tsx
+- Key architecture change: useRef as source of truth, state only for rendering
+- Key UX change: upload saves to gallery without auto-selecting, user clicks to try on
+- Removed all animation complexity that was causing rendering bugs

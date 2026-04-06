@@ -38,7 +38,6 @@ import {
   Plus,
 } from "lucide-react";
 import { toast } from "sonner";
-import { motion, AnimatePresence } from "framer-motion";
 
 const categoryIcons: Record<string, React.ReactNode> = {
   LayoutGrid: <LayoutGrid className="w-3.5 h-3.5" />,
@@ -74,10 +73,9 @@ export default function GlassesGallery({
   const [isProcessing, setIsProcessing] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const [processingStep, setProcessingStep] = useState(0);
-  // Store the file reference so we can process it later
   const pendingFileRef = useRef<File | null>(null);
 
-  // Separate custom glasses for display
+  // ─── Filtering ───
   const filteredDefault =
     activeCategory === "all" || activeCategory === "custom"
       ? defaultGlasses
@@ -88,6 +86,7 @@ export default function GlassesGallery({
       ? customGlasses
       : [];
 
+  // ─── File handling ───
   const processImageFile = useCallback((file: File) => {
     if (!file.type.startsWith("image/")) {
       toast.error("Por favor selecciona una imagen válida");
@@ -97,7 +96,6 @@ export default function GlassesGallery({
       toast.error("La imagen no debe superar 10MB");
       return;
     }
-    // Store file for later processing
     pendingFileRef.current = file;
     const reader = new FileReader();
     reader.onload = (ev) => {
@@ -137,13 +135,14 @@ export default function GlassesGallery({
     setIsDragOver(false);
   }, []);
 
-  // Upload handler — processes image, creates Blob URL, adds to gallery
+  // ─── Upload handler ───
+  // Key design: ONLY adds to gallery, does NOT auto-select.
+  // This prevents cascading re-renders between camera and gallery.
   const handleUpload = useCallback(async () => {
-    const currentPreview = previewUrl;
-    const currentName = uploadName;
     const file = pendingFileRef.current;
+    const currentName = uploadName;
 
-    if (!currentPreview || !file) {
+    if (!previewUrl || !file) {
       toast.error("Selecciona una imagen primero");
       return;
     }
@@ -152,7 +151,7 @@ export default function GlassesGallery({
     setProcessingStep(1);
 
     try {
-      // Load image from file (not from data URL — more reliable for large images)
+      // Load image from file
       const img = new Image();
       const objectUrl = URL.createObjectURL(file);
       await new Promise<void>((resolve, reject) => {
@@ -161,47 +160,44 @@ export default function GlassesGallery({
         img.src = objectUrl;
       });
 
-      // Remove background and get a Blob
+      // Remove background → get Blob
       setProcessingStep(2);
       const blob = await removeBackgroundToBlob(img);
-      // Revoke the object URL used for loading
       URL.revokeObjectURL(objectUrl);
 
-      // Create a Blob URL — tiny string, fast state updates
+      // Create Blob URL for the processed image
       const blobUrl = URL.createObjectURL(blob);
       setProcessingStep(3);
 
-      // Create the glasses model with Blob URL
+      // Create glasses model
       const newGlasses: GlassesModel = {
         id: `custom-${Date.now()}`,
         name: currentName || "Personalizado",
         brand: "CUSTOM",
-        category: "custom",
+        category: "custom" as const,
         price: "Custom",
         color: "#888",
         imageUrl: blobUrl,
         overlayUrl: blobUrl,
       };
 
-      console.log("[Gallery] Adding glasses to gallery:", newGlasses.id, newGlasses.name);
-      console.log("[Gallery] Blob URL:", blobUrl.substring(0, 60) + "...");
+      console.log("[Gallery] Upload complete:", newGlasses.id, blobUrl);
 
-      // Add to parent state FIRST, then select
+      // ─── Add to parent state ONLY (no auto-select) ───
       onAddCustom(newGlasses);
-      onSelect(newGlasses);
 
-      // Reset form
+      // Reset form state
       setPreviewUrl(null);
       setUploadName("");
       setUploadOpen(false);
-      setActiveCategory("all");
       pendingFileRef.current = null;
+      // Keep current category — don't change it
 
-      toast.success("✅ Anteojos agregados y seleccionados");
+      toast.success("✅ Anteojos guardados en la galería");
     } catch (err) {
       console.error("[Gallery] Error processing image:", err);
 
-      // Fallback: use original image without background removal
+      // Fallback: use original without BG removal
       const fallbackBlob = new Blob([await file.arrayBuffer()], { type: file.type });
       const fallbackUrl = URL.createObjectURL(fallbackBlob);
 
@@ -209,99 +205,99 @@ export default function GlassesGallery({
         id: `custom-${Date.now()}`,
         name: currentName || "Personalizado",
         brand: "CUSTOM",
-        category: "custom",
+        category: "custom" as const,
         price: "Custom",
         color: "#888",
         imageUrl: fallbackUrl,
         overlayUrl: fallbackUrl,
       };
 
-      console.log("[Gallery] Fallback — adding without BG removal:", newGlasses.id);
       onAddCustom(newGlasses);
-      onSelect(newGlasses);
       setPreviewUrl(null);
       setUploadName("");
       setUploadOpen(false);
-      setActiveCategory("all");
       pendingFileRef.current = null;
 
-      toast.success("Anteojos agregados (sin eliminación de fondo)");
+      toast.success("Anteojos guardados (sin eliminación de fondo)");
     } finally {
       setIsProcessing(false);
       setProcessingStep(0);
     }
-  }, [previewUrl, uploadName, onAddCustom, onSelect]);
+  }, [previewUrl, uploadName, onAddCustom]);
 
-  // Render a single glasses card
-  const renderGlassesCard = (glasses: GlassesModel) => (
-    <motion.div
-      key={glasses.id}
-      layout
-      initial={{ opacity: 0, scale: 0.9 }}
-      animate={{ opacity: 1, scale: 1 }}
-      exit={{ opacity: 0, scale: 0.9 }}
-      transition={{ duration: 0.2 }}
-    >
-      <button
-        onClick={() => {
-          if (selectedGlasses?.id === glasses.id) {
-            onSelect(null);
-          } else {
-            onSelect(glasses);
-          }
-        }}
-        className={`relative w-full aspect-[4/3] rounded-xl overflow-hidden transition-all duration-300 group border-2 ${
-          selectedGlasses?.id === glasses.id
-            ? "border-amber-500 shadow-lg shadow-amber-500/20"
-            : "border-white/5 hover:border-white/15"
-        } bg-white/[0.03]`}
+  // ─── Render a glasses card (NO framer-motion — pure CSS) ───
+  const renderGlassesCard = (glasses: GlassesModel) => {
+    const isSelected = selectedGlasses?.id === glasses.id;
+    const isCustom = glasses.category === "custom";
+
+    return (
+      <div
+        key={glasses.id}
+        className="transition-all duration-200"
       >
-        <div className="absolute inset-0 flex items-center justify-center p-2">
-          <img
-            src={glasses.imageUrl}
-            alt={glasses.name}
-            className="w-full h-full object-contain drop-shadow-lg transition-transform duration-300 group-hover:scale-110 rounded"
-          />
-        </div>
-
-        {selectedGlasses?.id === glasses.id && (
-          <div className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-amber-500 flex items-center justify-center shadow-lg">
-            <Check className="w-3.5 h-3.5 text-black" />
+        <button
+          onClick={() => {
+            if (isSelected) {
+              onSelect(null);
+            } else {
+              onSelect(glasses);
+            }
+          }}
+          className={`relative w-full aspect-[4/3] rounded-xl overflow-hidden transition-all duration-200 group border-2 ${
+            isSelected
+              ? "border-amber-500 shadow-lg shadow-amber-500/20"
+              : "border-white/5 hover:border-white/15"
+          } bg-white/[0.03]`}
+        >
+          <div className="absolute inset-0 flex items-center justify-center p-2">
+            <img
+              src={glasses.imageUrl}
+              alt={glasses.name}
+              className="w-full h-full object-contain drop-shadow-lg transition-transform duration-300 group-hover:scale-110 rounded"
+            />
           </div>
-        )}
 
-        {glasses.category === "custom" && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              // Revoke Blob URL before deleting
-              if (glasses.imageUrl.startsWith("blob:")) {
-                URL.revokeObjectURL(glasses.imageUrl);
-              }
-              onDeleteCustom(glasses.id);
-              toast.success("Anteojos eliminados");
-            }}
-            className="absolute top-1.5 left-1.5 w-5 h-5 rounded-full bg-red-500/80 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-          >
-            <Trash2 className="w-3 h-3 text-white" />
-          </button>
-        )}
+          {/* Selected indicator */}
+          {isSelected && (
+            <div className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-amber-500 flex items-center justify-center shadow-lg">
+              <Check className="w-3.5 h-3.5 text-black" />
+            </div>
+          )}
 
-        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-2 pt-6">
-          <p className="text-[10px] font-bold text-white/80 truncate">
-            {glasses.brand}
-          </p>
-          <p className="text-[9px] text-white/50 truncate">
-            {glasses.name}
-          </p>
-        </div>
-      </button>
-    </motion.div>
-  );
+          {/* Delete button for custom glasses */}
+          {isCustom && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                if (glasses.imageUrl.startsWith("blob:")) {
+                  URL.revokeObjectURL(glasses.imageUrl);
+                }
+                onDeleteCustom(glasses.id);
+                toast.success("Anteojos eliminados");
+              }}
+              className="absolute top-1.5 left-1.5 w-5 h-5 rounded-full bg-red-500/80 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+            >
+              <Trash2 className="w-3 h-3 text-white" />
+            </button>
+          )}
+
+          {/* Label */}
+          <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-2 pt-6">
+            <p className="text-[10px] font-bold text-white/80 truncate">
+              {glasses.brand}
+            </p>
+            <p className="text-[9px] text-white/50 truncate">
+              {glasses.name}
+            </p>
+          </div>
+        </button>
+      </div>
+    );
+  };
 
   return (
     <div className="flex flex-col h-full">
-      {/* Header */}
+      {/* ─── Header ─── */}
       <div className="px-4 pt-4 pb-2">
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-sm font-semibold text-white/90 uppercase tracking-wider">
@@ -325,7 +321,7 @@ export default function GlassesGallery({
           </div>
         </div>
 
-        {/* Categories */}
+        {/* Category buttons */}
         <ScrollArea orientation="horizontal" className="w-full -mx-4 px-4">
           <div className="flex gap-1.5 pb-2">
             {GLASSES_CATEGORIES.map((cat) => (
@@ -363,9 +359,9 @@ export default function GlassesGallery({
         </ScrollArea>
       </div>
 
-      {/* Scrollable content */}
+      {/* ─── Scrollable glasses grid ─── */}
       <ScrollArea className="flex-1 px-4 pb-4">
-        {/* ─── CUSTOM GLASSES SECTION (always at top) ─── */}
+        {/* Custom glasses section */}
         {(activeCategory === "all" || activeCategory === "custom") && customGlasses.length > 0 && (
           <div className="mb-4">
             <div className="flex items-center gap-2 mb-2">
@@ -376,14 +372,12 @@ export default function GlassesGallery({
               <span className="text-[10px] text-white/30">({customGlasses.length})</span>
             </div>
             <div className="grid grid-cols-2 gap-2.5">
-              <AnimatePresence mode="popLayout">
-                {filteredCustom.map(renderGlassesCard)}
-              </AnimatePresence>
+              {filteredCustom.map(renderGlassesCard)}
             </div>
           </div>
         )}
 
-        {/* ─── DEFAULT GLASSES SECTION ─── */}
+        {/* Default glasses section */}
         {activeCategory !== "custom" && (
           <div>
             {customGlasses.length > 0 && activeCategory === "all" && (
@@ -396,9 +390,7 @@ export default function GlassesGallery({
               </div>
             )}
             <div className="grid grid-cols-2 gap-2.5">
-              <AnimatePresence mode="popLayout">
-                {filteredDefault.map(renderGlassesCard)}
-              </AnimatePresence>
+              {filteredDefault.map(renderGlassesCard)}
             </div>
           </div>
         )}
@@ -413,7 +405,7 @@ export default function GlassesGallery({
         )}
       </ScrollArea>
 
-      {/* ═══ PROMINENT UPLOAD BUTTON — Fixed at bottom ═══ */}
+      {/* ─── Upload button fixed at bottom ─── */}
       <div className="px-4 pb-4 pt-2 border-t border-white/[0.06] bg-gray-950/90 backdrop-blur-sm">
         <Dialog open={uploadOpen} onOpenChange={setUploadOpen}>
           <DialogTrigger asChild>
@@ -482,7 +474,7 @@ export default function GlassesGallery({
                       </div>
                       <div className="flex items-center gap-1.5 text-emerald-400">
                         <CheckCircle2 className="w-3.5 h-3.5" />
-                        <span className="text-xs font-medium">Imagen lista — se eliminará el fondo al agregar</span>
+                        <span className="text-xs font-medium">Imagen lista — fondo se eliminará al agregar</span>
                       </div>
                     </div>
                   ) : isProcessing ? (
@@ -573,7 +565,7 @@ export default function GlassesGallery({
                       Procesando...
                     </span>
                   ) : (
-                    "Agregar anteojos"
+                    "Guardar en galería"
                   )}
                 </Button>
               </div>

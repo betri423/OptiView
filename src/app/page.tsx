@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import TryOnCamera from "@/components/tryon-camera";
 import GlassesGallery from "@/components/glasses-gallery";
 import { Button } from "@/components/ui/button";
@@ -93,12 +93,19 @@ export default function Home() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [showHero, setShowHero] = useState(true);
 
-  // Simple stable callbacks using functional setState — no stale closures possible
+  // ─── Ref-backed custom glasses store ───
+  // The ref is the source of truth. Version state triggers re-renders.
+  // This ensures custom glasses are NEVER lost even if React state resets.
+  const customGlassesRef = useRef<GlassesModel[]>([]);
+  const [customGlassesVersion, setCustomGlassesVersion] = useState(0);
+
+  // Re-derive from ref when version changes — always fresh
+  const customGlasses = useMemo(() => [...customGlassesRef.current], [customGlassesVersion]);
+
   const handleAddCustom = useCallback((g: GlassesModel) => {
-    setCustomGlasses((prev) => {
-      console.log('[OptiView] Adding custom glasses:', g.id, g.name);
-      return [g, ...prev];
-    });
+    console.log('[OptiView] Adding custom glasses:', g.id, g.name, 'total:', customGlassesRef.current.length + 1);
+    customGlassesRef.current = [g, ...customGlassesRef.current];
+    setCustomGlassesVersion((v) => v + 1);
   }, []);
 
   const handleSelectGlasses = useCallback((g: GlassesModel | null) => {
@@ -106,8 +113,9 @@ export default function Home() {
   }, []);
 
   const handleDeleteCustom = useCallback((id: string) => {
-    setCustomGlasses((prev) => prev.filter((g) => g.id !== id));
+    customGlassesRef.current = customGlassesRef.current.filter((g) => g.id !== id);
     setSelectedGlasses((cur) => (cur?.id === id ? null : cur));
+    setCustomGlassesVersion((v) => v + 1);
   }, []);
 
   const handleStartTryOn = useCallback(() => {
