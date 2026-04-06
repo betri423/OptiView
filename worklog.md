@@ -1,6 +1,33 @@
 # Worklog
 
 ---
+Task ID: 6
+Agent: Main Agent
+Task: Fix uploaded glasses not persisting in gallery + improve background removal
+
+Work Log:
+- Identified root cause: `customGlasses` state was local to `GlassesGallery` component — risk of state loss on re-renders
+- Moved `customGlasses` state from `GlassesGallery` to parent `page.tsx` as single source of truth
+- Updated `page.tsx`: added `customGlasses` state array, `onAddCustom` and `onDeleteCustom` callbacks
+- Rewrote `GlassesGallery` to receive `customGlasses`, `onAddCustom`, `onDeleteCustom` as props
+- Removed unused `customGlassesUrl` state and prop from the entire component tree
+- Updated `TryOnCamera` to remove `customGlassesUrl` dependency — now only uses `selectedGlasses.overlayUrl`
+- Improved background removal algorithm in `image-utils.ts`:
+  - Broader edge sampling (5px border depth, more sample points)
+  - 8-directional flood fill instead of 4-directional for better edge following
+  - More aggressive tolerance (35-80 range vs 25-60)
+  - Second-pass cleanup: removes background-colored pixels trapped inside content
+  - Larger smoothing search radius (5px vs 4px)
+- Lint passes clean, app compiles successfully
+
+Stage Summary:
+- Uploaded glasses now persist reliably in gallery (state owned by parent component)
+- Background removal is more aggressive and handles varied backgrounds better
+- Simplified state flow: single direction from gallery → parent → camera
+- Custom glasses appear immediately in "Mis Anteojos" section at top of gallery
+
+---
+
 Task ID: 5
 Agent: Main Agent
 Task: Complete rewrite — SVG overlays with AI gallery photos

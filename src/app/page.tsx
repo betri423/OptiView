@@ -20,7 +20,7 @@ import {
   Zap,
   Smartphone,
 } from "lucide-react";
-import { motion, AnimatePresence, useScroll, useTransform } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
 
 // ─── Animated counter component ───
@@ -88,7 +88,7 @@ function Stars() {
 // ─── Main Page ───
 export default function Home() {
   const [selectedGlasses, setSelectedGlasses] = useState<GlassesModel | null>(null);
-  const [customGlassesUrl, setCustomGlassesUrl] = useState<string | null>(null);
+  const [customGlasses, setCustomGlasses] = useState<GlassesModel[]>([]);
   const [activeSection, setActiveSection] = useState<"tryon" | "features">("tryon");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [showHero, setShowHero] = useState(true);
@@ -452,7 +452,6 @@ export default function Home() {
             >
               <TryOnCamera
                 selectedGlasses={selectedGlasses}
-                customGlassesUrl={customGlassesUrl}
               />
 
               {/* Quick tips */}
@@ -485,8 +484,12 @@ export default function Home() {
                 <GlassesGallery
                   selectedGlasses={selectedGlasses}
                   onSelect={setSelectedGlasses}
-                  customGlassesUrl={customGlassesUrl}
-                  onCustomGlassesChange={setCustomGlassesUrl}
+                  customGlasses={customGlasses}
+                  onAddCustom={(g) => setCustomGlasses((prev) => [g, ...prev])}
+                  onDeleteCustom={(id) => {
+                    setCustomGlasses((prev) => prev.filter((g) => g.id !== id));
+                    if (selectedGlasses?.id === id) setSelectedGlasses(null);
+                  }}
                 />
               </div>
             </motion.div>

@@ -54,18 +54,19 @@ const categoryIcons: Record<string, React.ReactNode> = {
 interface GlassesGalleryProps {
   selectedGlasses: GlassesModel | null;
   onSelect: (glasses: GlassesModel | null) => void;
-  customGlassesUrl: string | null;
-  onCustomGlassesChange: (url: string | null) => void;
+  customGlasses: GlassesModel[];
+  onAddCustom: (glasses: GlassesModel) => void;
+  onDeleteCustom: (id: string) => void;
 }
 
 export default function GlassesGallery({
   selectedGlasses,
   onSelect,
-  customGlassesUrl,
-  onCustomGlassesChange,
+  customGlasses,
+  onAddCustom,
+  onDeleteCustom,
 }: GlassesGalleryProps) {
   const [activeCategory, setActiveCategory] = useState("all");
-  const [customGlasses, setCustomGlasses] = useState<GlassesModel[]>([]);
   const [uploadOpen, setUploadOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -77,7 +78,7 @@ export default function GlassesGallery({
   // Separate custom glasses for display
   const filteredDefault =
     activeCategory === "all" || activeCategory === "custom"
-      ? defaultGlasses.filter((g) => activeCategory === "all" ? true : false)
+      ? defaultGlasses
       : defaultGlasses.filter((g) => g.category === activeCategory);
 
   const filteredCustom =
@@ -132,28 +133,6 @@ export default function GlassesGallery({
     setIsDragOver(false);
   }, []);
 
-  const finishUpload = useCallback((imageUrl: string, overlayUrl: string, name: string) => {
-    const newGlasses: GlassesModel = {
-      id: `custom-${Date.now()}`,
-      name: name || "Personalizado",
-      brand: "CUSTOM",
-      category: "custom",
-      price: "Custom",
-      color: "#888",
-      imageUrl,
-      overlayUrl,
-    };
-
-    setCustomGlasses((prev) => [newGlasses, ...prev]);
-    onSelect(newGlasses);
-    onCustomGlassesChange(null);
-    setPreviewUrl(null);
-    setUploadName("");
-    setUploadOpen(false);
-    setActiveCategory("all");
-    toast.success("✅ Anteojos agregados y seleccionados");
-  }, [onSelect, onCustomGlassesChange]);
-
   const handleUpload = useCallback(async () => {
     if (!previewUrl) {
       toast.error("Selecciona una imagen primero");
@@ -172,12 +151,12 @@ export default function GlassesGallery({
         img.src = previewUrl;
       });
 
-      // Remove background — algorithm auto-detects ANY background color
+      // Remove background
       setProcessingStep(2);
       const result = await removeBackground(img);
       setProcessingStep(3);
 
-      // If result is the same image reference (already transparent), convert to canvas for consistent handling
+      // Convert result to data URL
       const finalCanvas = document.createElement("canvas");
       finalCanvas.width = result.naturalWidth || result.width;
       finalCanvas.height = result.naturalHeight || result.height;
@@ -185,27 +164,56 @@ export default function GlassesGallery({
       finalCtx.drawImage(result, 0, 0);
       const finalUrl = finalCanvas.toDataURL("image/png");
 
-      finishUpload(finalUrl, finalUrl, uploadName);
+      // Create the glasses model
+      const newGlasses: GlassesModel = {
+        id: `custom-${Date.now()}`,
+        name: uploadName || "Personalizado",
+        brand: "CUSTOM",
+        category: "custom",
+        price: "Custom",
+        color: "#888",
+        imageUrl: finalUrl,
+        overlayUrl: finalUrl,
+      };
+
+      // Add to parent state and select it
+      onAddCustom(newGlasses);
+      onSelect(newGlasses);
+
+      // Reset form
+      setPreviewUrl(null);
+      setUploadName("");
+      setUploadOpen(false);
+      setActiveCategory("all");
+
+      toast.success("✅ Anteojos agregados y seleccionados");
     } catch (err) {
       console.error("Error processing image:", err);
-      // Fallback: use original
-      finishUpload(previewUrl, previewUrl, uploadName);
+      // Fallback: use original image without background removal
+      const newGlasses: GlassesModel = {
+        id: `custom-${Date.now()}`,
+        name: uploadName || "Personalizado",
+        brand: "CUSTOM",
+        category: "custom",
+        price: "Custom",
+        color: "#888",
+        imageUrl: previewUrl,
+        overlayUrl: previewUrl,
+      };
+
+      onAddCustom(newGlasses);
+      onSelect(newGlasses);
+      setPreviewUrl(null);
+      setUploadName("");
+      setUploadOpen(false);
+      setActiveCategory("all");
+
+      toast.success("Anteojos agregados (sin eliminación de fondo)");
     } finally {
       setIsProcessing(false);
       setProcessingStep(0);
     }
-  }, [previewUrl, uploadName, finishUpload]);
-
-  const handleDeleteCustom = useCallback(
-    (id: string) => {
-      setCustomGlasses((prev) => prev.filter((g) => g.id !== id));
-      if (selectedGlasses?.id === id) {
-        onSelect(null);
-      }
-      toast.success("Anteojos eliminados");
-    },
-    [selectedGlasses, onSelect]
-  );
+  }, [previewUrl, uploadName, onAddCustom, onSelect]);
 
   // Render a single glasses card
   const renderGlassesCard = (glasses: GlassesModel) => (
@@ -219,7 +227,6 @@ export default function GlassesGallery({
     >
       <button
         onClick={() => {
-          onCustomGlassesChange(null);
           if (selectedGlasses?.id === glasses.id) {
             onSelect(null);
           } else {
@@ -250,7 +257,8 @@ export default function GlassesGallery({
           <button
             onClick={(e) => {
               e.stopPropagation();
-              handleDeleteCustom(glasses.id);
+              onDeleteCustom(glasses.id);
+              toast.success("Anteojos eliminados");
             }}
             className="absolute top-1.5 left-1.5 w-5 h-5 rounded-full bg-red-500/80 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
           >

@@ -25,12 +25,10 @@ import { motion, AnimatePresence } from "framer-motion";
 
 interface TryOnCameraProps {
   selectedGlasses: GlassesModel | null;
-  customGlassesUrl: string | null;
 }
 
 export default function TryOnCamera({
   selectedGlasses,
-  customGlassesUrl,
 }: TryOnCameraProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -63,7 +61,7 @@ export default function TryOnCamera({
 
   // Load glasses SVG overlay — SVGs are always transparent, no processing needed
   useEffect(() => {
-    const url = customGlassesUrl || selectedGlasses?.overlayUrl || null;
+    const url = selectedGlasses?.overlayUrl || null;
     if (!url) {
       glassesImgRef.current = null;
       return;
@@ -81,7 +79,7 @@ export default function TryOnCamera({
       setImageLoading(false);
     };
     img.src = url;
-  }, [selectedGlasses, customGlassesUrl]);
+  }, [selectedGlasses]);
 
   // Render loop for drawing glasses overlay
   useEffect(() => {
@@ -520,11 +518,11 @@ export default function TryOnCamera({
               {/* Screenshot */}
               <Button
                 onClick={takeScreenshot}
-                disabled={!selectedGlasses && !customGlassesUrl}
+                disabled={!selectedGlasses}
                 variant="ghost"
                 size="icon"
                 className={`rounded-xl w-14 h-14 border-2 transition-all duration-300 ${
-                  selectedGlasses || customGlassesUrl
+                  !!selectedGlasses
                     ? "bg-white/10 hover:bg-white/20 text-white/80 border-white/20 hover:scale-105 active:scale-95"
                     : "bg-white/[0.03] text-white/20 border-white/[0.06] cursor-not-allowed"
                 }`}
